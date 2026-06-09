@@ -3713,7 +3713,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@scaffold-ui/components@npm:^0.1.10":
+"@scaffold-ui/components@npm:^0.1.10, @scaffold-ui/components@npm:^0.1.12":
   version: 0.1.12
   resolution: "@scaffold-ui/components@npm:0.1.12"
   peerDependencies:
@@ -5903,6 +5903,44 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@wagmi/connectors@npm:8.0.15":
+  version: 8.0.15
+  resolution: "@wagmi/connectors@npm:8.0.15"
+  peerDependencies:
+    "@base-org/account": ^2.5.1
+    "@coinbase/wallet-sdk": ^4.3.6
+    "@metamask/connect-evm": ^1.3.0
+    "@safe-global/safe-apps-provider": ~0.18.6
+    "@safe-global/safe-apps-sdk": ^9.1.0
+    "@wagmi/core": 3.5.0
+    "@walletconnect/ethereum-provider": ^2.21.1
+    accounts: ~0.10
+    porto: ~0.2.35
+    typescript: ">=5.9.3"
+    viem: 2.x
+  peerDependenciesMeta:
+    "@base-org/account":
+      optional: true
+    "@coinbase/wallet-sdk":
+      optional: true
+    "@metamask/connect-evm":
+      optional: true
+    "@safe-global/safe-apps-provider":
+      optional: true
+    "@safe-global/safe-apps-sdk":
+      optional: true
+    "@walletconnect/ethereum-provider":
+      optional: true
+    accounts:
+      optional: true
+    porto:
+      optional: true
+    typescript:
+      optional: true
+  checksum: 10/bd780e9db6bfb4cf554aa6c69b369b81083045fd0a49a526e9a8068ebf4776832b230b7d4d5a3856c542acff3d0e6497d29385d4baedd2a9ef9fb03728ad946b
+  languageName: node
+  linkType: hard
+
 "@wagmi/core@npm:2.22.1":
   version: 2.22.1
   resolution: "@wagmi/core@npm:2.22.1"
@@ -5920,6 +5958,29 @@ __metadata:
     typescript:
       optional: true
   checksum: 10/f330d98b80e49d3e21e7d7b616961dc3e2abb8710a7e973e5e20dea94625989f02c2633c4dae6cb187728c387829bf26bc65bec39464f553394e2541b3604d32
+  languageName: node
+  linkType: hard
+
+"@wagmi/core@npm:3.5.0":
+  version: 3.5.0
+  resolution: "@wagmi/core@npm:3.5.0"
+  dependencies:
+    eventemitter3: "npm:5.0.1"
+    mipd: "npm:0.0.7"
+    zustand: "npm:5.0.0"
+  peerDependencies:
+    "@tanstack/query-core": ">=5.0.0"
+    accounts: ~0.12
+    typescript: ">=5.9.3"
+    viem: 2.x
+  peerDependenciesMeta:
+    "@tanstack/query-core":
+      optional: true
+    accounts:
+      optional: true
+    typescript:
+      optional: true
+  checksum: 10/bac279d3d0b2e0275a32609e3ffdf754915b5c77c2e7afffe8c7475fe3808f5ca1cbe950f8945ab9dcdecc32623eab6fda1fea7a8d2d4242c342e4acb78dda5d
   languageName: node
   linkType: hard
 
@@ -14004,7 +14065,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"react@npm:~19.2.5":
+"react@npm:^19.2.7, react@npm:~19.2.5":
   version: 19.2.7
   resolution: "react@npm:19.2.7"
   checksum: 10/2939997e87d7f0ee0d9d2bb556866b616b999dfb7916283647034eda867a045a39c4f7a736c8ea6beffffcd78397fc30f63a7a3aaf8425b683c3060670859560
@@ -14462,8 +14523,12 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "se-2@workspace:."
   dependencies:
+    "@scaffold-ui/components": "npm:^0.1.12"
     husky: "npm:~9.1.6"
     lint-staged: "npm:~13.2.2"
+    react: "npm:^19.2.7"
+    viem: "npm:^2.52.0"
+    wagmi: "npm:^3.6.16"
   languageName: unknown
   linkType: soft
 
@@ -16304,7 +16369,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"viem@npm:>=2.29.0, viem@npm:^2.1.1, viem@npm:^2.27.2, viem@npm:^2.31.7, viem@npm:^2.47.0":
+"viem@npm:>=2.29.0, viem@npm:^2.1.1, viem@npm:^2.27.2, viem@npm:^2.31.7, viem@npm:^2.47.0, viem@npm:^2.52.0":
   version: 2.52.0
   resolution: "viem@npm:2.52.0"
   dependencies:
@@ -16341,6 +16406,25 @@ __metadata:
     typescript:
       optional: true
   checksum: 10/f4c9a58661acf05de19ba378b5c3292954dd72a050ca69125743bd5ce33ed68e210df4c44c7b64d0a02e2a9e82f08b7e88d76b26abe45e954abe6e73ec84724d
+  languageName: node
+  linkType: hard
+
+"wagmi@npm:^3.6.16":
+  version: 3.6.16
+  resolution: "wagmi@npm:3.6.16"
+  dependencies:
+    "@wagmi/connectors": "npm:8.0.15"
+    "@wagmi/core": "npm:3.5.0"
+    use-sync-external-store: "npm:1.4.0"
+  peerDependencies:
+    "@tanstack/react-query": ">=5.0.0"
+    react: ">=18"
+    typescript: ">=5.9.3"
+    viem: 2.x
+  peerDependenciesMeta:
+    typescript:
+      optional: true
+  checksum: 10/5ff6be939257df0482eb778b56de3a190fa1a19c1bac84e5a4fe0df9f7351972be34bd961a271f3d569c020287840ef518883647f4d48720ab7f36a944d5d72e
   languageName: node
   linkType: hard
 

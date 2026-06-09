@@ -80,7 +80,23 @@ export const PlayTab = () => {
     args: [address, GAME_ADDRESS],
   });
 
-  const game = rawGame as CurrentGame | undefined;
+  const game = useMemo<CurrentGame | undefined>(() => {
+    if (!rawGame) return undefined;
+    // `currentGame` returns multiple named outputs, which viem decodes as a tuple (array).
+    const t = rawGame as readonly unknown[];
+    return {
+      contestant: t[0] as string,
+      jackpotValue: BigInt(t[1] as bigint | number),
+      contestantClam: Number(t[2]),
+      currentRound: Number(t[3]),
+      lastActionTimestamp: BigInt(t[4] as bigint | number),
+      currentOffer: BigInt(t[5] as bigint | number),
+      active: Boolean(t[6]),
+      vrfPending: Boolean(t[7]),
+      roundEliminated: Boolean(t[8]),
+      vrfRequestId: BigInt(t[9] as bigint | number),
+    };
+  }, [rawGame]);
 
   const { data: elimEvents } = useScaffoldEventHistory({
     contractName: "ClamsGame",
@@ -114,7 +130,7 @@ export const PlayTab = () => {
 
   const elimNeeded = game && game.currentRound < CLAMS_PER_ROUND.length ? CLAMS_PER_ROUND[game.currentRound] : 0;
 
-  const forfeitDeadline = game ? game.lastActionTimestamp + FORFEIT_TIMEOUT_SECONDS : 0n;
+  const forfeitDeadline = game ? BigInt(game.lastActionTimestamp) + FORFEIT_TIMEOUT_SECONDS : 0n;
   const timedOut = game?.active ? BigInt(now) >= forfeitDeadline : false;
   const secondsLeft = game?.active ? Number(forfeitDeadline) - now : 0;
 

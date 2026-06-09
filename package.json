@@ -56,5 +56,11 @@
   "packageManager": "yarn@4.13.0",
   "engines": {
     "node": ">=20.18.3"
+  },
+  "dependencies": {
+    "@scaffold-ui/components": "^0.1.12",
+    "react": "^19.2.7",
+    "viem": "^2.52.0",
+    "wagmi": "^3.6.16"
   }
 }
