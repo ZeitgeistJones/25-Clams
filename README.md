@@ -1,5 +1,7 @@
 # 25 Clams
 
+**Live URL:** https://bafybeighicki72flstc4aygaadclxjve4frl5ny63de52wneymtcs6xzzu.ipfs.community.bgipfs.com/
+
 A fully onchain Deal or No Deal-style game on Base, powered by CLAWD tokens and Chainlink VRF.
 
 ## How It Works
