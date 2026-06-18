@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Address } from "@scaffold-ui/components";
 import { formatUnits, parseUnits } from "viem";
 import { base } from "viem/chains";
@@ -58,8 +58,14 @@ export const InvestTab = () => {
   const { writeContractAsync: writeClawd } = useScaffoldWriteContract({ contractName: "CLAWD" });
   const { writeContractAsync: writePool } = useScaffoldWriteContract({ contractName: "ClamsPool" });
 
-  const shareValue =
-    (totalShares || 0n) > 0n && totalPooled !== undefined ? (totalPooled * 10n ** 18n) / totalShares! : undefined;
+  const shareValue = useMemo(() => {
+    const pooled = totalPooled !== undefined ? BigInt(totalPooled) : 0n;
+    const shares = totalShares !== undefined ? BigInt(totalShares) : 0n;
+    if (shares > 0n) {
+      return (pooled * 10n ** 18n) / shares;
+    }
+    return undefined;
+  }, [totalPooled, totalShares]);
 
   let depositParsed: bigint | undefined;
   try {
@@ -68,14 +74,7 @@ export const InvestTab = () => {
     depositParsed = undefined;
   }
 
-  let withdrawParsed: bigint | undefined;
-  try {
-    withdrawParsed = withdrawShares ? parseUnits(withdrawShares, 18) : undefined;
-  } catch {
-    withdrawParsed = undefined;
-  }
-
-  const needsApproval = (allowance ?? 0n) < (depositParsed ?? 0n) || (allowance ?? 0n) === 0n;
+  const needsApproval = allowance === undefined || (depositParsed !== undefined && allowance < depositParsed);
 
   const handleApprove = async () => {
     if (approvalSubmitting || approvalCooldown || !depositParsed) return;
@@ -109,10 +108,11 @@ export const InvestTab = () => {
   };
 
   const handleWithdraw = async () => {
-    if (withdrawSubmitting || !withdrawParsed) return;
+    if (withdrawSubmitting || !withdrawShares) return;
     setWithdrawSubmitting(true);
     try {
-      await writePool({ functionName: "withdraw", args: [withdrawParsed] });
+      const sharesParsed = parseUnits(withdrawShares, 18);
+      await writePool({ functionName: "withdraw", args: [sharesParsed] });
       notification.success("Withdrawal successful!");
       setWithdrawShares("");
     } catch {
@@ -131,165 +131,143 @@ export const InvestTab = () => {
   ) : null;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
       {/* Pool Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="card bg-base-200 shadow-md">
-          <div className="card-body p-5">
-            <h3 className="text-xs uppercase text-base-content/60 font-bold">Total Pool Value</h3>
-            <div className="text-2xl font-bold">{fmt(totalPooled)} CLAWD</div>
-            <div className="text-xs text-base-content/50 mt-1">
-              {totalShares ? `${Number(formatUnits(totalShares, 18)).toLocaleString()} total shares` : "—"}
+      <div className="card bg-base-200 shadow-md">
+        <div className="card-body p-5">
+          <h3 className="card-title text-sm uppercase text-base-content/60">Pool Stats</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-2">
+            <div>
+              <div className="text-xs text-base-content/50">Total Pooled</div>
+              <div className="text-xl font-bold">{fmt(totalPooled)}</div>
             </div>
-          </div>
-        </div>
-        <div className="card bg-base-200 shadow-md">
-          <div className="card-body p-5">
-            <h3 className="text-xs uppercase text-base-content/60 font-bold">Share Price</h3>
-            <div className="text-2xl font-bold">
-              {shareValue ? `${Number(formatUnits(shareValue, 18)).toLocaleString(undefined, { maximumFractionDigits: 4 })} CLAWD` : "1.0000 CLAWD"}
+            <div>
+              <div className="text-xs text-base-content/50">Total Shares</div>
+              <div className="text-xl font-bold">{fmt(totalShares)}</div>
             </div>
-            <div className="text-xs text-base-content/50 mt-1">Value of 1.0000 share</div>
+            <div>
+              <div className="text-xs text-base-content/50">Share Value</div>
+              <div className="text-xl font-bold">{shareValue ? Number(formatUnits(shareValue, 18)).toFixed(4) : "—"}</div>
+            </div>
+            <div>
+              <div className="text-xs text-base-content/50">Status</div>
+              <div className={`text-xl font-bold ${gameActive ? "text-success" : "text-base-content/40"}`}>
+                {gameActive ? "Active" : "Idle"}
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* User Stats */}
-      {isConnected && (
-        <div className="card bg-primary text-primary-content shadow-lg">
-          <div className="card-body p-5">
-            <h3 className="text-xs uppercase opacity-70 font-bold">Your Investment</h3>
-            <div className="flex justify-between items-end">
-              <div>
-                <div className="text-3xl font-bold">{fmt(userCLAWD)} CLAWD</div>
-                <div className="text-sm opacity-80">
-                  {userShares ? `${Number(formatUnits(userShares, 18)).toLocaleString()} shares` : "0 shares"}
-                </div>
-              </div>
-              <div className="text-right">
-                <div className="text-xs opacity-70">Wallet Balance</div>
-                <div className="font-semibold">{fmt(clawdBalance)} CLAWD</div>
-              </div>
+      {/* Your Investment */}
+      <div className="card bg-base-200 shadow-md">
+        <div className="card-body p-5">
+          <h3 className="card-title text-sm uppercase text-base-content/60">Your Investment</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">
+            <div>
+              <div className="text-xs text-base-content/50">Your Shares</div>
+              <div className="text-xl font-bold">{fmt(userShares)}</div>
+            </div>
+            <div>
+              <div className="text-xs text-base-content/50">Value in CLAWD</div>
+              <div className="text-xl font-bold">{fmt(userCLAWD)}</div>
             </div>
           </div>
         </div>
-      )}
+      </div>
 
       {/* Actions */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Deposit */}
         <div className="card bg-base-200 shadow-md">
           <div className="card-body p-5">
-            <h3 className="card-title text-sm font-bold mb-4">Deposit CLAWD</h3>
-            <div className="flex flex-col gap-3">
-              <div className="join w-full">
+            <h3 className="card-title">Deposit</h3>
+            <div className="form-control">
+              <label className="label">
+                <span className="label-text">Amount to Invest (CLAWD)</span>
+                <span className="label-text-alt">Balance: {fmt(clawdBalance)}</span>
+              </label>
+              <div className="join">
                 <input
                   type="number"
-                  placeholder="Amount"
+                  placeholder="0.0"
                   className="input input-bordered join-item w-full"
                   value={depositAmount}
                   onChange={e => setDepositAmount(e.target.value)}
                 />
-                <button
-                  className="btn btn-ghost join-item border border-base-300"
-                  onClick={() => setDepositAmount(formatUnits(clawdBalance || 0n, CLAWD_DECIMALS))}
-                >
+                <button className="btn btn-ghost join-item border-base-300" onClick={() => setDepositAmount(formatUnits(clawdBalance || 0n, CLAWD_DECIMALS))}>
                   MAX
                 </button>
               </div>
-
+            </div>
+            <div className="mt-4">
               {walletGate ? (
                 walletGate
               ) : needsApproval ? (
                 <button
-                  className="btn btn-primary w-full"
+                  className="btn btn-secondary w-full"
                   onClick={handleApprove}
-                  disabled={approvalSubmitting || approvalCooldown || !depositAmount || Number(depositAmount) <= 0}
+                  disabled={approvalSubmitting || approvalCooldown || !depositParsed}
                 >
-                  {approvalSubmitting ? <span className="loading loading-spinner loading-sm" /> : null}
+                  {approvalSubmitting || approvalCooldown ? <span className="loading loading-spinner loading-sm" /> : null}
                   Approve CLAWD
                 </button>
               ) : (
                 <button
                   className="btn btn-primary w-full"
                   onClick={handleDeposit}
-                  disabled={depositSubmitting || !depositAmount || Number(depositAmount) <= 0}
+                  disabled={depositSubmitting || !depositParsed || depositParsed === 0n}
                 >
                   {depositSubmitting ? <span className="loading loading-spinner loading-sm" /> : null}
                   Deposit
                 </button>
               )}
             </div>
-            <p className="text-[10px] text-base-content/50 mt-2">
-              Invest in the pool to earn from game entry fees and forfeits.
-            </p>
           </div>
         </div>
 
         {/* Withdraw */}
         <div className="card bg-base-200 shadow-md">
           <div className="card-body p-5">
-            <h3 className="card-title text-sm font-bold mb-4">Withdraw Shares</h3>
-            <div className="flex flex-col gap-3">
-              <div className="join w-full">
+            <h3 className="card-title">Withdraw</h3>
+            <div className="form-control">
+              <label className="label">
+                <span className="label-text">Shares to Withdraw</span>
+                <span className="label-text-alt">Available: {fmt(userShares)}</span>
+              </label>
+              <div className="join">
                 <input
                   type="number"
-                  placeholder="Shares"
+                  placeholder="0.0"
                   className="input input-bordered join-item w-full"
                   value={withdrawShares}
                   onChange={e => setWithdrawShares(e.target.value)}
                 />
-                <button
-                  className="btn btn-ghost join-item border border-base-300"
-                  onClick={() => setWithdrawShares(formatUnits(userShares || 0n, 18))}
-                >
+                <button className="btn btn-ghost join-item border-base-300" onClick={() => setWithdrawShares(formatUnits(userShares || 0n, 18))}>
                   MAX
                 </button>
               </div>
-
+            </div>
+            <div className="mt-4">
               {walletGate ? (
                 walletGate
               ) : (
                 <button
-                  className="btn btn-outline w-full"
+                  className="btn btn-primary w-full"
                   onClick={handleWithdraw}
-                  disabled={withdrawSubmitting || !withdrawShares || Number(withdrawShares) <= 0 || !!gameActive}
+                  disabled={withdrawSubmitting || !withdrawShares || gameActive}
                 >
                   {withdrawSubmitting ? <span className="loading loading-spinner loading-sm" /> : null}
-                  {gameActive ? "Game in Progress" : "Withdraw"}
+                  {gameActive ? "Locked during game" : "Withdraw"}
                 </button>
               )}
+              {gameActive && (
+                <p className="text-[10px] text-error mt-2 text-center">
+                  Withdrawals are disabled while a game is in progress to protect the pool.
+                </p>
+              )}
             </div>
-            <p className="text-[10px] text-base-content/50 mt-2">
-              {gameActive
-                ? "Withdrawals are disabled while a game is active to protect the pool."
-                : "Withdraw your shares to receive CLAWD plus your portion of the earnings."}
-            </p>
           </div>
-        </div>
-      </div>
-
-      {/* Info */}
-      <div className="alert shadow-sm text-xs">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          fill="none"
-          viewBox="0 0 24 24"
-          className="stroke-info shrink-0 w-6 h-6"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth="2"
-            d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-          ></path>
-        </svg>
-        <div>
-          <h3 className="font-bold">How it works</h3>
-          <p>
-            The Clams Pool funds the game jackpots. Investors earn 100% of the entry fees and any forfeited jackpots.
-            When you deposit, you receive shares representing your portion of the pool.
-          </p>
         </div>
       </div>
     </div>
