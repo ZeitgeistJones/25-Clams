@@ -110,9 +110,9 @@ export const PlayTab = () => {
   const { writeContractAsync: writeGame } = useScaffoldWriteContract({ contractName: "ClamsGame" });
 
   const needsApproval = allowance === undefined || allowance < ENTRY_FEE;
-  const isContestant = !!address && !!game && game.contestant.toLowerCase() === address.toLowerCase();
+  const isContestant = !!game && !!address && game.contestant.toLowerCase() === address.toLowerCase();
 
-  const elimNeeded = game && game.currentRound < CLAMS_PER_ROUND.length ? CLAMS_PER_ROUND[game.currentRound] : 0;
+  const elimNeeded = game && Number(game.currentRound) < CLAMS_PER_ROUND.length ? CLAMS_PER_ROUND[Number(game.currentRound)] : 0;
 
   const forfeitDeadline = game ? game.lastActionTimestamp + FORFEIT_TIMEOUT_SECONDS : 0n;
   const timedOut = game?.active ? BigInt(now) >= forfeitDeadline : false;
@@ -205,7 +205,7 @@ export const PlayTab = () => {
 
   const toggleElim = (id: number) => {
     if (!isContestant || !game?.active) return;
-    if (id === game.contestantClam) return; // can't eliminate your own clam
+    if (id === Number(game.contestantClam)) return; // can't eliminate your own clam
     if (eliminatedValues.has(id)) return;
     setSelectedForElim(prev => {
       const next = new Set(prev);
@@ -216,7 +216,7 @@ export const PlayTab = () => {
   };
 
   const noActiveGame = game && !game.active && !game.vrfPending;
-  const isFinalRound = game ? game.currentRound >= TOTAL_ROUNDS - 1 : false;
+  const isFinalRound = game ? Number(game.currentRound) >= TOTAL_ROUNDS - 1 : false;
   const showBankerOffer =
     game?.active && isContestant && game.roundEliminated && game.currentOffer > 0n && !isFinalRound;
 
@@ -282,7 +282,7 @@ export const PlayTab = () => {
             <div className="mt-2">
               {chosenClam !== null ? (
                 <p className="text-sm">
-                  Holding: <span className="font-semibold">{CLAM_CHARACTERS[chosenClam].name}</span> (#{chosenClam})
+                  Holding: <span className="font-semibold">{CLAM_CHARACTERS[Number(chosenClam)].name}</span> (#{Number(chosenClam)})
                 </p>
               ) : (
                 <p className="text-sm text-base-content/60">No clam selected yet.</p>
@@ -327,7 +327,7 @@ export const PlayTab = () => {
                 <div>
                   <div className="text-xs uppercase text-base-content/60">Round</div>
                   <div className="text-lg font-semibold">
-                    {Math.min(game.currentRound + 1, TOTAL_ROUNDS)} of {TOTAL_ROUNDS}
+                    {Math.min(Number(game.currentRound) + 1, TOTAL_ROUNDS)} of {TOTAL_ROUNDS}
                   </div>
                 </div>
                 <div>
@@ -369,7 +369,7 @@ export const PlayTab = () => {
               )}
               <ClamGrid
                 eliminatedValues={eliminatedValues}
-                heldClam={game.contestantClam}
+                heldClam={Number(game.contestantClam)}
                 selectionMode={isContestant && !game.roundEliminated && !isFinalRound}
                 selected={selectedForElim}
                 onClamClick={toggleElim}
