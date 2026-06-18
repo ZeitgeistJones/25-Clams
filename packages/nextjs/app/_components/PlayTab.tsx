@@ -65,10 +65,10 @@ export const PlayTab = () => {
   const { data: rawGame } = useScaffoldReadContract({ contractName: "ClamsGame", functionName: "currentGame" });
   const { data: totalPooled } = useScaffoldReadContract({ contractName: "ClamsPool", functionName: "totalPooled" });
   const { data: jackpotPreview } = useScaffoldReadContract({
-  contractName: "ClamsGame",
-  functionName: "getJackpotValue",
-  args: [totalPooled ?? 0n],
-});
+    contractName: "ClamsGame",
+    functionName: "getJackpotValue",
+    args: [totalPooled ?? 0n],
+  });
   const { data: clawdBalance } = useScaffoldReadContract({
     contractName: "CLAWD",
     functionName: "balanceOf",
@@ -85,8 +85,8 @@ export const PlayTab = () => {
   const { data: elimEvents } = useScaffoldEventHistory({
     contractName: "ClamsGame",
     eventName: "ClamsEliminated",
-    fromBlock: 29998000n,
-    watch: false,
+    fromBlock: 47124293n,
+    watch: true,
     blockData: false,
   });
 
@@ -110,11 +110,11 @@ export const PlayTab = () => {
   const { writeContractAsync: writeGame } = useScaffoldWriteContract({ contractName: "ClamsGame" });
 
   const needsApproval = allowance === undefined || allowance < ENTRY_FEE;
-  const isContestant = !!game && !!address && game.contestant.toLowerCase() === address.toLowerCase();
+  const isContestant = !!address && !!game && game.contestant.toLowerCase() === address.toLowerCase();
 
   const elimNeeded = game && game.currentRound < CLAMS_PER_ROUND.length ? CLAMS_PER_ROUND[game.currentRound] : 0;
 
-  const forfeitDeadline = game ? game.lastActionTimestamp + BigInt(FORFEIT_TIMEOUT_SECONDS) : 0n;
+  const forfeitDeadline = game ? game.lastActionTimestamp + FORFEIT_TIMEOUT_SECONDS : 0n;
   const timedOut = game?.active ? BigInt(now) >= forfeitDeadline : false;
   const secondsLeft = game?.active ? Number(forfeitDeadline - BigInt(now)) : 0;
 
@@ -154,7 +154,7 @@ export const PlayTab = () => {
     setElimSubmitting(true);
     try {
       const ids = Array.from(selectedForElim).sort((a, b) => a - b);
-      await writeGame({ functionName: "eliminateClams", args: [ids as number[]] });
+      await writeGame({ functionName: "eliminateClams", args: [ids] });
       notification.success("Clams eliminated!");
       setSelectedForElim(new Set());
     } catch {
