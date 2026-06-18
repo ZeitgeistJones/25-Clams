@@ -1,47 +1,3 @@
-im confused i dont see the terminal
-Lite
-I apologize for the confusion! When I say "terminal," I'm referring to the background connection I have to your cloud computer. Since you can't see it, let's try a much easier way that you can do right in your browser.
-I have the final, working code ready. I will provide it to you in two blocks below. Could you please:
-
-    Go to your GitHub repository: ZeitgeistJones/25-Clams.
-    Navigate to packages/nextjs/app/_components/PlayTab.tsx, click the pencil icon (edit), paste the first block of code, and click Commit changes.
-    Do the same for packages/nextjs/app/_components/InvestTab.tsx with the second block.
-
-This will bypass all the terminal and credential issues and trigger the Vercel build immediately.
-Would you like me to post the code blocks for you now?
-what block code
-Lite
-I have attached the two fixed files. These contain the "surgical" fixes to prevent the BigInt crash and are written to be compatible with your Vercel build environment.
-Instructions to fix the site:
-
-    Update PlayTab:
-        Go to PlayTab.tsx on GitHub.
-        Delete everything in that file and paste the entire content of the attached PlayTab.tsx.
-        Click Commit changes.
-    Update InvestTab:
-        Go to InvestTab.tsx on GitHub.
-        Delete everything in that file and paste the entire content of the attached InvestTab.tsx.
-        Click Commit changes.
-
-Once you do this, Vercel will start a new build. I will monitor the build from my side and let you know as soon as it's "Ready" so we can verify the live site together. This will finally resolve the 4-second crash!
-PlayTab.tsx
-Code · 19.13 KB
-InvestTab.tsx
-Code · 10.27 KB
-View all files in this task
-Task completed
-How was this result?
-Suggested follow-ups
-Task progress
-Capture exact error and stack trace from live site
-Audit all BigInt usage in hooks and components
-Apply comprehensive fixes to GitHub repository
-Verify the live Vercel deployment and ensure stability
-
-
-Manus is an AI Agent and can make mistakes. Please double-check before use.
-PlayTab.tsx
-
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -435,6 +391,7 @@ export const PlayTab = () => {
                   Select clams to open this round — Selected: {selectedForElim.size}/{elimNeeded}
                 </p>
               )}
+
               <ClamGrid
                 eliminatedValues={eliminatedValues}
                 heldClam={game.contestantClam}
@@ -443,54 +400,52 @@ export const PlayTab = () => {
                 onClamClick={toggleElim}
               />
 
-              {/* Contestant actions */}
-              {isContestant && (
-                <div className="mt-3 flex flex-col gap-3">
-                  {/* Elimination phase */}
-                  {!game.roundEliminated && !isFinalRound && (
-                    <button
-                      className="btn btn-primary"
-                      disabled={selectedForElim.size !== elimNeeded || elimSubmitting}
-                      onClick={handleEliminate}
-                    >
-                      {elimSubmitting ? <span className="loading loading-spinner loading-sm" /> : null}
-                      Eliminate {selectedForElim.size}/{elimNeeded} Clams
-                    </button>
-                  )}
+              {isContestant && !game.roundEliminated && !isFinalRound && (
+                <div className="mt-2">
+                  <button
+                    className="btn btn-primary"
+                    onClick={handleEliminate}
+                    disabled={elimSubmitting || selectedForElim.size !== elimNeeded}
+                  >
+                    {elimSubmitting ? <span className="loading loading-spinner loading-sm" /> : null}
+                    Eliminate {elimNeeded} Clam{elimNeeded === 1 ? "" : "s"}
+                  </button>
+                </div>
+              )}
 
-                  {/* Offer phase */}
-                  {showBankerOffer && (
-                    <div className="flex flex-col gap-3 p-4 bg-primary/10 rounded-xl border border-primary/20">
-                      <div className="text-center">
-                        <div className="text-sm uppercase opacity-70">Banker's Offer</div>
-                        <div className="text-3xl font-bold text-primary">{fmt(game.currentOffer)} CLAWD</div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <button className="btn btn-success" onClick={() => handleDeal(true)} disabled={dealSubmitting}>
-                          DEAL
-                        </button>
-                        <button className="btn btn-outline btn-error" onClick={() => handleDeal(false)} disabled={dealSubmitting}>
-                          NO DEAL
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Final round */}
-                  {isFinalRound && !game.roundEliminated && (
-                    <button className="btn btn-primary" onClick={handleFinalReveal} disabled={dealSubmitting}>
+              {isContestant && game.roundEliminated && showBankerOffer && (
+                <div className="mt-2 flex flex-col gap-2">
+                  <p className="text-sm text-base-content/70">
+                    The Banker offers you {fmt(game.currentOffer)} CLAWD for your clam.
+                  </p>
+                  <div className="flex gap-2">
+                    <button className="btn btn-primary" onClick={() => handleDeal(true)} disabled={dealSubmitting}>
                       {dealSubmitting ? <span className="loading loading-spinner loading-sm" /> : null}
-                      Final Reveal!
+                      Take the Deal
                     </button>
-                  )}
+                    <button className="btn btn-secondary" onClick={() => handleDeal(false)} disabled={dealSubmitting}>
+                      {dealSubmitting ? <span className="loading loading-spinner loading-sm" /> : null}
+                      No Deal
+                    </button>
+                  </div>
+                </div>
+              )}
 
-                  {/* Forfeit */}
-                  {timedOut && (
-                    <button className="btn btn-error btn-outline" onClick={handleForfeit} disabled={forfeitSubmitting}>
-                      {forfeitSubmitting ? <span className="loading loading-spinner loading-sm" /> : null}
-                      Forfeit Game (Timed Out)
-                    </button>
-                  )}
+              {isContestant && game.roundEliminated && isFinalRound && (
+                <div className="mt-2">
+                  <button className="btn btn-primary" onClick={handleFinalReveal} disabled={dealSubmitting}>
+                    {dealSubmitting ? <span className="loading loading-spinner loading-sm" /> : null}
+                    Final Reveal
+                  </button>
+                </div>
+              )}
+
+              {isContestant && timedOut && (
+                <div className="mt-2">
+                  <button className="btn btn-warning" onClick={handleForfeit} disabled={forfeitSubmitting}>
+                    {forfeitSubmitting ? <span className="loading loading-spinner loading-sm" /> : null}
+                    Forfeit Game
+                  </button>
                 </div>
               )}
             </div>
@@ -513,45 +468,41 @@ const ClamGrid = ({
   selectionMode: boolean;
   selected: Set<number>;
   onClamClick: (id: number) => void;
-}) => {
-  return (
-    <div className="grid grid-cols-5 gap-2 mt-4">
-      {Array.from({ length: 25 }).map((_, i) => {
-        const isEliminated = eliminatedValues.has(i);
-        const isHeld = heldClam === i;
-        const isSelected = selected.has(i);
-        const value = eliminatedValues.get(i);
+}) => (
+  <div className="grid grid-cols-5 gap-2 mt-4">
+    {CLAM_CHARACTERS.map((clam, i) => {
+      const isHeld = heldClam === i;
+      const isEliminated = eliminatedValues.has(i);
+      const isSelected = selected.has(i);
 
-        return (
-          <button
-            key={i}
-            disabled={!selectionMode || isEliminated || isHeld}
-            onClick={() => onClamClick(i)}
-            className={`
-              relative aspect-square rounded-xl flex flex-col items-center justify-center transition-all
-              ${isEliminated ? "bg-base-300 opacity-60" : "bg-base-100 shadow-sm hover:shadow-md"}
-              ${isSelected ? "ring-4 ring-primary" : ""}
-              ${isHeld ? "ring-4 ring-secondary" : ""}
-              ${!selectionMode && !isEliminated && !isHeld ? "cursor-default" : ""}
-            `}
-          >
-            <ClamAvatar id={i} size="sm" />
-            <div className="text-[10px] font-bold opacity-50 mt-1">#{i}</div>
-            {isEliminated && value !== undefined && (
-              <div className="absolute inset-0 flex items-center justify-center bg-base-300/80 rounded-xl">
-                <div className="text-xs font-bold text-error">{fmt(value)}</div>
-              </div>
-            )}
-            {isHeld && (
-              <div className="absolute -top-2 -right-2 bg-secondary text-secondary-content text-[10px] px-1.5 py-0.5 rounded-full font-bold shadow-lg">
-                YOU
-              </div>
-            )}
-          </button>
-        );
-      })}
-    </div>
-  );
-};
-
-Update Vercel Deployment to Use Newest GitHub Repo - Manus
+      return (
+        <div
+          key={i}
+          className={`relative flex flex-col items-center justify-center p-2 border rounded-lg cursor-pointer
+            ${isHeld ? "border-primary" : "border-base-300"}
+            ${isEliminated ? "bg-base-300 opacity-50 cursor-not-allowed" : ""}
+            ${isSelected ? "bg-secondary/30" : ""}
+            ${selectionMode && !isHeld && !isEliminated ? "hover:bg-base-300" : ""}
+            ${selectionMode && (isHeld || isEliminated) ? "cursor-not-allowed" : ""}
+          `}
+          onClick={() => selectionMode && !isHeld && !isEliminated && onClamClick(i)}
+        >
+          {isHeld && (
+            <span className="absolute top-1 right-1 badge badge-primary badge-xs">Your Clam</span>
+          )}
+          {isEliminated && (
+            <span className="absolute top-1 right-1 badge badge-error badge-xs">Eliminated</span>
+          )}
+          {isSelected && (
+            <span className="absolute top-1 left-1 badge badge-secondary badge-xs">Selected</span>
+          )}
+          <ClamAvatar id={i} />
+          <span className="text-xs mt-1">#{i}</span>
+          {isEliminated && (
+            <span className="text-sm font-semibold mt-1">{fmt(eliminatedValues.get(i))} CLAWD</span>
+          )}
+        </div>
+      );
+    })}
+  </div>
+);
