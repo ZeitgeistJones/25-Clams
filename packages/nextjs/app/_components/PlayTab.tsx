@@ -164,7 +164,7 @@ export const PlayTab = () => {
     if (startSubmitting || chosenClam === null) return;
     setStartSubmitting(true);
     try {
-      await writeGame({ functionName: "startGame", args: [BigInt(chosenClam)] });
+      await writeGame({ functionName: "startGame", args: [chosenClam] });
       notification.success("Game starting — shuffling clams!");
     } catch {
       notification.error("Failed to start game");
