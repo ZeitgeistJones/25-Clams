@@ -34,25 +34,21 @@ export const InvestTab = () => {
   const { data: totalPooled } = useScaffoldReadContract({ contractName: "ClamsPool", functionName: "totalPooled" });
   const { data: totalShares } = useScaffoldReadContract({ contractName: "ClamsPool", functionName: "totalShares" });
   const { data: gameActive } = useScaffoldReadContract({ contractName: "ClamsPool", functionName: "gameActive" });
-
   const { data: userShares } = useScaffoldReadContract({
     contractName: "ClamsPool",
     functionName: "shares",
     args: [address],
   });
-
   const { data: userCLAWD } = useScaffoldReadContract({
     contractName: "ClamsPool",
     functionName: "userSharesCLAWD",
     args: [address],
   });
-
   const { data: clawdBalance } = useScaffoldReadContract({
     contractName: "CLAWD",
     functionName: "balanceOf",
     args: [address],
   });
-
   const { data: allowance, refetch: refetchAllowance } = useScaffoldReadContract({
     contractName: "CLAWD",
     functionName: "allowance",
@@ -79,183 +75,223 @@ export const InvestTab = () => {
     withdrawParsed = undefined;
   }
 
-  const estimatedShares =
-    depositParsed && shareValue && shareValue > 0n ? (depositParsed * 10n ** 18n) / shareValue : undefined;
-
-  const withdrawCLAWD =
-    withdrawParsed && shareValue && shareValue > 0n ? (withdrawParsed * shareValue) / 10n ** 18n : undefined;
-
-  const needsApproval = isConnected && (allowance ?? 0n) < (depositParsed ?? 0n);
+  const needsApproval = (allowance ?? 0n) < (depositParsed ?? 0n) || (allowance ?? 0n) === 0n;
 
   const handleApprove = async () => {
-    if (!depositParsed) return;
+    if (approvalSubmitting || approvalCooldown || !depositParsed) return;
     setApprovalSubmitting(true);
     try {
-      await writeClawd({ functionName: "approve", args: [POOL_ADDRESS, depositParsed * 10n] });
-      await refetchAllowance();
+      await writeClawd({ functionName: "approve", args: [POOL_ADDRESS, depositParsed] });
       setApprovalCooldown(true);
-      setTimeout(() => setApprovalCooldown(false), 3000);
-    } catch (e) {
-      console.error(e);
+      setTimeout(() => {
+        setApprovalCooldown(false);
+        refetchAllowance();
+      }, 4000);
+    } catch {
+      notification.error("Approval failed");
     } finally {
       setApprovalSubmitting(false);
     }
   };
 
   const handleDeposit = async () => {
-    if (!depositParsed) return;
+    if (depositSubmitting || !depositParsed) return;
     setDepositSubmitting(true);
     try {
       await writePool({ functionName: "deposit", args: [depositParsed] });
-      setDepositAmount("");
       notification.success("Deposit successful!");
-    } catch (e) {
-      console.error(e);
+      setDepositAmount("");
+    } catch {
+      notification.error("Deposit failed");
     } finally {
       setDepositSubmitting(false);
     }
   };
 
   const handleWithdraw = async () => {
-    if (!withdrawParsed) return;
+    if (withdrawSubmitting || !withdrawParsed) return;
     setWithdrawSubmitting(true);
     try {
       await writePool({ functionName: "withdraw", args: [withdrawParsed] });
-      setWithdrawShares("");
       notification.success("Withdrawal successful!");
-    } catch (e) {
-      console.error(e);
+      setWithdrawShares("");
+    } catch {
+      notification.error("Withdrawal failed");
     } finally {
       setWithdrawSubmitting(false);
     }
   };
 
+  const walletGate = !isConnected ? (
+    <RainbowKitCustomConnectButton />
+  ) : !onBase ? (
+    <button className="btn btn-primary" onClick={() => switchChain({ chainId: base.id })}>
+      Switch to Base
+    </button>
+  ) : null;
+
   return (
-    <div className="flex flex-col gap-6 max-w-4xl mx-auto">
+    <div className="flex flex-col gap-6">
       {/* Pool Stats */}
-      <div className="card bg-base-100 shadow-xl border border-base-300">
-        <div className="card-body p-6">
-          <h3 className="card-title">Pool Overview</h3>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-            <Stat label="Pool TVL" value={`${fmt(totalPooled)} CLAWD`} />
-            <Stat label="Total Shares" value={fmt(totalShares)} />
-            <Stat label="Share Value" value={`${fmt(shareValue)} CLAWD`} />
-          </div>
-          <div className="divider my-1" />
-          <div className="flex items-center gap-2 text-sm">
-            <span className="text-base-content/70">Pool contract:</span>
-            <Address address={POOL_ADDRESS} />
-          </div>
-          {isConnected && (
-            <div className="grid grid-cols-2 gap-4 mt-2">
-              <Stat label="Your Shares" value={fmt(userShares)} />
-              <Stat label="Your Position" value={`${fmt(userCLAWD)} CLAWD`} />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="card bg-base-200 shadow-md">
+          <div className="card-body p-5">
+            <h3 className="text-xs uppercase text-base-content/60 font-bold">Total Pool Value</h3>
+            <div className="text-2xl font-bold">{fmt(totalPooled)} CLAWD</div>
+            <div className="text-xs text-base-content/50 mt-1">
+              {totalShares ? `${Number(formatUnits(totalShares, 18)).toLocaleString()} total shares` : "—"}
             </div>
-          )}
+          </div>
+        </div>
+        <div className="card bg-base-200 shadow-md">
+          <div className="card-body p-5">
+            <h3 className="text-xs uppercase text-base-content/60 font-bold">Share Price</h3>
+            <div className="text-2xl font-bold">
+              {shareValue ? `${Number(formatUnits(shareValue, 18)).toLocaleString(undefined, { maximumFractionDigits: 4 })} CLAWD` : "1.0000 CLAWD"}
+            </div>
+            <div className="text-xs text-base-content/50 mt-1">Value of 1.0000 share</div>
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* User Stats */}
+      {isConnected && (
+        <div className="card bg-primary text-primary-content shadow-lg">
+          <div className="card-body p-5">
+            <h3 className="text-xs uppercase opacity-70 font-bold">Your Investment</h3>
+            <div className="flex justify-between items-end">
+              <div>
+                <div className="text-3xl font-bold">{fmt(userCLAWD)} CLAWD</div>
+                <div className="text-sm opacity-80">
+                  {userShares ? `${Number(formatUnits(userShares, 18)).toLocaleString()} shares` : "0 shares"}
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-xs opacity-70">Wallet Balance</div>
+                <div className="font-semibold">{fmt(clawdBalance)} CLAWD</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Actions */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Deposit */}
         <div className="card bg-base-200 shadow-md">
           <div className="card-body p-5">
-            <h3 className="card-title">Deposit</h3>
-            <p className="text-sm text-base-content/70">CLAWD balance: {fmt(clawdBalance)}</p>
-            <label className="form-control">
-              <span className="label-text mb-1">Amount (CLAWD)</span>
-              <input
-                type="number"
-                min="0"
-                placeholder="0.0"
-                className="input input-bordered bg-base-100"
-                value={depositAmount}
-                onChange={e => setDepositAmount(e.target.value)}
-                disabled={!!gameActive}
-              />
-            </label>
-            {estimatedShares !== undefined && (
-              <p className="text-xs text-base-content/60">Estimated shares: {fmt(estimatedShares)}</p>
-            )}
-            {!isConnected ? (
-              <RainbowKitCustomConnectButton />
-            ) : !onBase ? (
-              <button className="btn btn-primary" onClick={() => switchChain({ chainId: base.id })}>
-                Switch to Base
-              </button>
-            ) : gameActive ? (
-              <button className="btn btn-disabled">Pool locked</button>
-            ) : needsApproval ? (
-              <button
-                className="btn btn-secondary"
-                onClick={handleApprove}
-                disabled={approvalSubmitting || approvalCooldown || !depositParsed}
-              >
-                {approvalSubmitting || approvalCooldown ? (
-                  <span className="loading loading-spinner loading-sm" />
-                ) : null}
-                Approve CLAWD
-              </button>
-            ) : (
-              <button
-                className="btn btn-primary"
-                onClick={handleDeposit}
-                disabled={depositSubmitting || !depositParsed}
-              >
-                {depositSubmitting ? <span className="loading loading-spinner loading-sm" /> : null}
-                Deposit
-              </button>
-            )}
+            <h3 className="card-title text-sm font-bold mb-4">Deposit CLAWD</h3>
+            <div className="flex flex-col gap-3">
+              <div className="join w-full">
+                <input
+                  type="number"
+                  placeholder="Amount"
+                  className="input input-bordered join-item w-full"
+                  value={depositAmount}
+                  onChange={e => setDepositAmount(e.target.value)}
+                />
+                <button
+                  className="btn btn-ghost join-item border border-base-300"
+                  onClick={() => setDepositAmount(formatUnits(clawdBalance || 0n, CLAWD_DECIMALS))}
+                >
+                  MAX
+                </button>
+              </div>
+
+              {walletGate ? (
+                walletGate
+              ) : needsApproval ? (
+                <button
+                  className="btn btn-primary w-full"
+                  onClick={handleApprove}
+                  disabled={approvalSubmitting || approvalCooldown || !depositAmount || Number(depositAmount) <= 0}
+                >
+                  {approvalSubmitting ? <span className="loading loading-spinner loading-sm" /> : null}
+                  Approve CLAWD
+                </button>
+              ) : (
+                <button
+                  className="btn btn-primary w-full"
+                  onClick={handleDeposit}
+                  disabled={depositSubmitting || !depositAmount || Number(depositAmount) <= 0}
+                >
+                  {depositSubmitting ? <span className="loading loading-spinner loading-sm" /> : null}
+                  Deposit
+                </button>
+              )}
+            </div>
+            <p className="text-[10px] text-base-content/50 mt-2">
+              Invest in the pool to earn from game entry fees and forfeits.
+            </p>
           </div>
         </div>
 
         {/* Withdraw */}
         <div className="card bg-base-200 shadow-md">
           <div className="card-body p-5">
-            <h3 className="card-title">Withdraw</h3>
-            <p className="text-sm text-base-content/70">Your shares: {fmt(userShares)}</p>
-            <label className="form-control">
-              <span className="label-text mb-1">Shares to burn</span>
-              <input
-                type="number"
-                min="0"
-                placeholder="0.0"
-                className="input input-bordered bg-base-100"
-                value={withdrawShares}
-                onChange={e => setWithdrawShares(e.target.value)}
-                disabled={!!gameActive}
-              />
-            </label>
-            {withdrawCLAWD !== undefined && (
-              <p className="text-xs text-base-content/60">You receive: {fmt(withdrawCLAWD)} CLAWD</p>
-            )}
-            {!isConnected ? (
-              <RainbowKitCustomConnectButton />
-            ) : !onBase ? (
-              <button className="btn btn-primary" onClick={() => switchChain({ chainId: base.id })}>
-                Switch to Base
-              </button>
-            ) : gameActive ? (
-              <button className="btn btn-disabled">Pool locked</button>
-            ) : (
-              <button
-                className="btn btn-primary"
-                onClick={handleWithdraw}
-                disabled={withdrawSubmitting || !withdrawParsed}
-              >
-                {withdrawSubmitting ? <span className="loading loading-spinner loading-sm" /> : null}
-                Withdraw
-              </button>
-            )}
+            <h3 className="card-title text-sm font-bold mb-4">Withdraw Shares</h3>
+            <div className="flex flex-col gap-3">
+              <div className="join w-full">
+                <input
+                  type="number"
+                  placeholder="Shares"
+                  className="input input-bordered join-item w-full"
+                  value={withdrawShares}
+                  onChange={e => setWithdrawShares(e.target.value)}
+                />
+                <button
+                  className="btn btn-ghost join-item border border-base-300"
+                  onClick={() => setWithdrawShares(formatUnits(userShares || 0n, 18))}
+                >
+                  MAX
+                </button>
+              </div>
+
+              {walletGate ? (
+                walletGate
+              ) : (
+                <button
+                  className="btn btn-outline w-full"
+                  onClick={handleWithdraw}
+                  disabled={withdrawSubmitting || !withdrawShares || Number(withdrawShares) <= 0 || !!gameActive}
+                >
+                  {withdrawSubmitting ? <span className="loading loading-spinner loading-sm" /> : null}
+                  {gameActive ? "Game in Progress" : "Withdraw"}
+                </button>
+              )}
+            </div>
+            <p className="text-[10px] text-base-content/50 mt-2">
+              {gameActive
+                ? "Withdrawals are disabled while a game is active to protect the pool."
+                : "Withdraw your shares to receive CLAWD plus your portion of the earnings."}
+            </p>
           </div>
+        </div>
+      </div>
+
+      {/* Info */}
+      <div className="alert shadow-sm text-xs">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+          className="stroke-info shrink-0 w-6 h-6"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="2"
+            d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+          ></path>
+        </svg>
+        <div>
+          <h3 className="font-bold">How it works</h3>
+          <p>
+            The Clams Pool funds the game jackpots. Investors earn 100% of the entry fees and any forfeited jackpots.
+            When you deposit, you receive shares representing your portion of the pool.
+          </p>
         </div>
       </div>
     </div>
   );
 };
-
-const Stat = ({ label, value }: { label: string; value: string }) => (
-  <div>
-    <div className="text-xs uppercase text-base-content/60">{label}</div>
-    <div className="text-lg font-semibold">{value}</div>
-  </div>
-);
