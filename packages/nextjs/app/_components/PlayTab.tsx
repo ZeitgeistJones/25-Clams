@@ -20,10 +20,14 @@ import { notification } from "~~/utils/scaffold-eth";
 
 const GAME_ADDRESS = "0x5E91944DB001C70435E2425DF14430829d4fBc06";
 
-const fmt = (v?: bigint) =>
-  v === undefined
-    ? "—"
-    : Number(formatUnits(v, CLAWD_DECIMALS)).toLocaleString(undefined, { maximumFractionDigits: 2 });
+const fmt = (v?: bigint) => {
+  if (v === undefined) return "—";
+  try {
+    return Number(formatUnits(v, CLAWD_DECIMALS)).toLocaleString(undefined, { maximumFractionDigits: 2 });
+  } catch (e) {
+    return "—";
+  }
+};
 
 type CurrentGame = {
   contestant: string;
@@ -44,12 +48,10 @@ export const PlayTab = () => {
   const { switchChain } = useSwitchChain();
   const onBase = chainId === base.id;
 
-  // Local UI state
   const [chosenClam, setChosenClam] = useState<number | null>(null);
   const [selectedForElim, setSelectedForElim] = useState<Set<number>>(new Set());
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
 
-  // Submission guards
   const [approvalSubmitting, setApprovalSubmitting] = useState(false);
   const [approvalCooldown, setApprovalCooldown] = useState(false);
   const [startSubmitting, setStartSubmitting] = useState(false);
@@ -87,15 +89,15 @@ export const PlayTab = () => {
       const isArray = Array.isArray(g);
       return {
         contestant: String((isArray ? g[0] : g.contestant) || ""),
-        jackpotValue: BigInt((isArray ? g[1] : g.jackpotValue) || BigInt(0)),
+        jackpotValue: BigInt((isArray ? g[1] : g.jackpotValue) || "0"),
         contestantClam: Number((isArray ? g[2] : g.contestantClam) || 0),
         currentRound: Number((isArray ? g[3] : g.currentRound) || 0),
-        lastActionTimestamp: BigInt((isArray ? g[4] : g.lastActionTimestamp) || BigInt(0)),
-        currentOffer: BigInt((isArray ? g[5] : g.currentOffer) || BigInt(0)),
+        lastActionTimestamp: BigInt((isArray ? g[4] : g.lastActionTimestamp) || "0"),
+        currentOffer: BigInt((isArray ? g[5] : g.currentOffer) || "0"),
         active: Boolean(isArray ? g[6] : g.active),
         vrfPending: Boolean(isArray ? g[7] : g.vrfPending),
         roundEliminated: Boolean(isArray ? g[8] : g.roundEliminated),
-        vrfRequestId: BigInt((isArray ? g[9] : g.vrfRequestId) || BigInt(0)),
+        vrfRequestId: BigInt((isArray ? g[9] : g.vrfRequestId) || "0"),
       } as CurrentGame;
     } catch (e) {
       console.error("Error parsing game data:", e);
@@ -106,22 +108,21 @@ export const PlayTab = () => {
   const { data: elimEvents } = useScaffoldEventHistory({
     contractName: "ClamsGame",
     eventName: "ClamsEliminated",
-    fromBlock: BigInt(47124293),
+    fromBlock: BigInt("47124293"),
     watch: true,
     blockData: false,
   });
 
-  // Map eliminated clamId -> revealed value, gathered from event history.
   const eliminatedValues = useMemo(() => {
     const map = new Map<number, bigint>();
     if (!elimEvents) return map;
     for (const ev of elimEvents) {
-      const args = (ev as { args?: { clamIds?: readonly number[]; values?: readonly bigint[] } }).args;
+      const args = (ev as any).args;
       const ids = args?.clamIds;
       const vals = args?.values;
       if (!ids || !vals) continue;
-      ids.forEach((id, i) => {
-        map.set(Number(id), vals[i]);
+      ids.forEach((id: any, i: number) => {
+        map.set(Number(id), BigInt(vals[i] || "0"));
       });
     }
     return map;
@@ -137,17 +138,16 @@ export const PlayTab = () => {
     game && game.currentRound < CLAMS_PER_ROUND.length ? (CLAMS_PER_ROUND[game.currentRound] as number) : 0;
 
   const forfeitDeadline =
-    game && game.lastActionTimestamp > BigInt(0) ? game.lastActionTimestamp + BigInt(FORFEIT_TIMEOUT_SECONDS) : BigInt(0);
-  const timedOut = game?.active && forfeitDeadline > BigInt(0) ? BigInt(now) >= forfeitDeadline : false;
+    game && game.lastActionTimestamp > BigInt("0") ? game.lastActionTimestamp + BigInt(FORFEIT_TIMEOUT_SECONDS) : BigInt("0");
+  const timedOut = game?.active && forfeitDeadline > BigInt("0") ? BigInt(now) >= forfeitDeadline : false;
   const secondsLeft =
-    game?.active && forfeitDeadline > BigInt(0) ? (forfeitDeadline > BigInt(now) ? Number(forfeitDeadline - BigInt(now)) : 0) : 0;
+    game?.active && forfeitDeadline > BigInt("0") ? (forfeitDeadline > BigInt(now) ? Number(forfeitDeadline - BigInt(now)) : 0) : 0;
 
-  // ---- Handlers ----
   const handleApprove = async () => {
     if (approvalSubmitting || approvalCooldown) return;
     setApprovalSubmitting(true);
     try {
-      await writeClawd({ functionName: "approve", args: [GAME_ADDRESS, ENTRY_FEE * BigInt(100)] });
+      await writeClawd({ functionName: "approve", args: [GAME_ADDRESS, ENTRY_FEE * BigInt("100")] });
       setApprovalCooldown(true);
       setTimeout(() => {
         setApprovalCooldown(false);
@@ -229,7 +229,7 @@ export const PlayTab = () => {
 
   const toggleElim = (id: number) => {
     if (!isContestant || !game?.active) return;
-    if (id === game.contestantClam) return; // can't eliminate your own clam
+    if (id === game.contestantClam) return;
     if (eliminatedValues.has(id)) return;
     setSelectedForElim(prev => {
       const next = new Set(prev);
@@ -242,9 +242,8 @@ export const PlayTab = () => {
   const noActiveGame = game && !game.active && !game.vrfPending;
   const isFinalRound = game ? game.currentRound >= TOTAL_ROUNDS - 1 : false;
   const showBankerOffer =
-    !!game?.active && isContestant && !!game.roundEliminated && (game.currentOffer || BigInt(0)) > BigInt(0) && !isFinalRound;
+    !!game?.active && isContestant && !!game.roundEliminated && (game.currentOffer || BigInt("0")) > BigInt("0") && !isFinalRound;
 
-  // ---- Wallet gate (single button) ----
   const walletGate = !isConnected ? (
     <RainbowKitCustomConnectButton />
   ) : !onBase ? (
@@ -255,7 +254,6 @@ export const PlayTab = () => {
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Jackpot / fee summary */}
       <div className="card bg-base-200 shadow-md">
         <div className="card-body p-5 flex-row flex-wrap justify-between items-center gap-4">
           <div>
@@ -275,7 +273,6 @@ export const PlayTab = () => {
         </div>
       </div>
 
-      {/* VRF pending */}
       {game?.vrfPending && (
         <div className="card bg-base-200 shadow-md">
           <div className="card-body items-center text-center p-8">
@@ -286,7 +283,6 @@ export const PlayTab = () => {
         </div>
       )}
 
-      {/* No active game: start flow */}
       {noActiveGame && (
         <div className="card bg-base-200 shadow-md">
           <div className="card-body p-5">
@@ -342,7 +338,6 @@ export const PlayTab = () => {
         </div>
       )}
 
-      {/* Active game */}
       {game?.active && (
         <>
           <div className="card bg-base-200 shadow-md">
@@ -361,7 +356,7 @@ export const PlayTab = () => {
                 <div>
                   <div className="text-xs uppercase text-base-content/60">Banker Offer</div>
                   <div className="text-lg font-semibold">
-                    {game.currentOffer > BigInt(0) ? `${fmt(game.currentOffer)} CLAWD` : "—"}
+                    {game.currentOffer > BigInt("0") ? `${fmt(game.currentOffer)} CLAWD` : "—"}
                   </div>
                 </div>
                 <div>
@@ -382,7 +377,6 @@ export const PlayTab = () => {
             </div>
           </div>
 
-          {/* The board */}
           <div className="card bg-base-200 shadow-md">
             <div className="card-body p-5">
               <h3 className="card-title">The Board</h3>
