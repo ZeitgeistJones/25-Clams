@@ -3,7 +3,6 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig & Record<string, any> = {
   reactStrictMode: true,
   devIndicators: false,
-  output: "export",
   trailingSlash: true,
   images: {
     unoptimized: true,
