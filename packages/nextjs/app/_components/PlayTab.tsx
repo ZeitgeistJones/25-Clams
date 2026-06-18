@@ -80,27 +80,33 @@ export const PlayTab = () => {
     args: [address, GAME_ADDRESS],
   });
 
-  // Safely map rawGame to a typed object using named properties
   const game = useMemo(() => {
-    if (!rawGame) return null;
-    // rawGame is returned as an object with named properties by viem/wagmi
+    if (!rawGame) return undefined;
     const g = rawGame as any;
+    
+    // Handle both array and object formats from viem/wagmi
+    const getVal = (key: string, index: number) => {
+      if (g[key] !== undefined) return g[key];
+      if (Array.isArray(g) && g[index] !== undefined) return g[index];
+      return undefined;
+    };
+
     try {
       return {
-        contestant: String(g.contestant || ""),
-        jackpotValue: BigInt(g.jackpotValue || 0n),
-        contestantClam: Number(g.contestantClam || 0),
-        currentRound: Number(g.currentRound || 0),
-        lastActionTimestamp: BigInt(g.lastActionTimestamp || 0n),
-        currentOffer: BigInt(g.currentOffer || 0n),
-        active: Boolean(g.active),
-        vrfPending: Boolean(g.vrfPending),
-        roundEliminated: Boolean(g.roundEliminated),
-        vrfRequestId: BigInt(g.vrfRequestId || 0n),
+        contestant: String(getVal(\"contestant\", 0) || \"\"),
+        jackpotValue: BigInt(getVal(\"jackpotValue\", 1) || 0n),
+        contestantClam: Number(getVal(\"contestantClam\", 2) || 0),
+        currentRound: Number(getVal(\"currentRound\", 3) || 0),
+        lastActionTimestamp: BigInt(getVal(\"lastActionTimestamp\", 4) || 0n),
+        currentOffer: BigInt(getVal(\"currentOffer\", 5) || 0n),
+        active: Boolean(getVal(\"active\", 6)),
+        vrfPending: Boolean(getVal(\"vrfPending\", 7)),
+        roundEliminated: Boolean(getVal(\"roundEliminated\", 8)),
+        vrfRequestId: BigInt(getVal(\"vrfRequestId\", 9) || 0n),
       } as CurrentGame;
     } catch (e) {
-      console.error("Error mapping game data:", e);
-      return null;
+      console.error(\"Error parsing game data:\", e);
+      return undefined;
     }
   }, [rawGame]);
 
@@ -117,12 +123,12 @@ export const PlayTab = () => {
     const map = new Map<number, bigint>();
     if (!elimEvents) return map;
     for (const ev of elimEvents) {
-      const args = (ev as any).args;
+      const args = (ev as { args?: { clamIds?: readonly number[]; values?: readonly bigint[] } }).args;
       const ids = args?.clamIds;
       const vals = args?.values;
       if (!ids || !vals) continue;
-      ids.forEach((id: any, i: number) => {
-        map.set(Number(id), BigInt(vals[i] || 0n));
+      ids.forEach((id, i) => {
+        map.set(Number(id), vals[i]);
       });
     }
     return map;
@@ -131,19 +137,17 @@ export const PlayTab = () => {
   const { writeContractAsync: writeClawd } = useScaffoldWriteContract({ contractName: "CLAWD" });
   const { writeContractAsync: writeGame } = useScaffoldWriteContract({ contractName: "ClamsGame" });
 
-  const needsApproval = (allowance ?? 0n) < ENTRY_FEE;
+  const needsApproval = allowance === undefined || allowance < ENTRY_FEE;
   const isContestant = !!game && !!address && game.contestant.toLowerCase() === address.toLowerCase();
 
   const elimNeeded =
-    game && game.currentRound < CLAMS_PER_ROUND.length ? Number(CLAMS_PER_ROUND[game.currentRound]) : 0;
+    game && game.currentRound < CLAMS_PER_ROUND.length ? (CLAMS_PER_ROUND[game.currentRound] as number) : 0;
 
   const forfeitDeadline =
     game && game.lastActionTimestamp > 0n ? game.lastActionTimestamp + FORFEIT_TIMEOUT_SECONDS : 0n;
-  
-  const bigNow = BigInt(now);
-  const timedOut = game?.active && forfeitDeadline > 0n ? bigNow >= forfeitDeadline : false;
+  const timedOut = game?.active && forfeitDeadline > 0n ? BigInt(now) >= forfeitDeadline : false;
   const secondsLeft =
-    game?.active && forfeitDeadline > 0n ? (forfeitDeadline > bigNow ? Number(forfeitDeadline - bigNow) : 0) : 0;
+    game?.active && forfeitDeadline > 0n ? (forfeitDeadline > BigInt(now) ? Number(forfeitDeadline - BigInt(now)) : 0) : 0;
 
   // ---- Handlers ----
   const handleApprove = async () => {
@@ -167,7 +171,7 @@ export const PlayTab = () => {
     if (startSubmitting || chosenClam === null) return;
     setStartSubmitting(true);
     try {
-      await writeGame({ functionName: "startGame", args: [BigInt(chosenClam)] });
+      await writeGame({ functionName: "startGame", args: [chosenClam] });
       notification.success("Game starting — shuffling clams!");
     } catch {
       notification.error("Failed to start game");
@@ -180,7 +184,7 @@ export const PlayTab = () => {
     if (elimSubmitting || selectedForElim.size !== elimNeeded) return;
     setElimSubmitting(true);
     try {
-      const ids = Array.from(selectedForElim).sort((a, b) => a - b).map(id => BigInt(id));
+      const ids = Array.from(selectedForElim).sort((a, b) => a - b);
       await writeGame({ functionName: "eliminateClams", args: [ids] });
       notification.success("Clams eliminated!");
       setSelectedForElim(new Set());
@@ -405,11 +409,8 @@ export const PlayTab = () => {
               {/* Contestant actions */}
               {isContestant && (
                 <div className="mt-3 flex flex-col gap-3">
-                  {game.vrfPending ? (
-                    <div className="flex items-center gap-2 text-warning">
-                      <span className="loading loading-spinner loading-sm" />
-                      <span>VRF Shuffling...</span>
-                    </div>
+                  {walletGate ? (
+                    walletGate
                   ) : isFinalRound ? (
                     <button className="btn btn-primary" onClick={handleFinalReveal} disabled={dealSubmitting}>
                       {dealSubmitting ? <span className="loading loading-spinner loading-sm" /> : null}
