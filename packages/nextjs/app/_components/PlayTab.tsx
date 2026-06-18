@@ -65,10 +65,10 @@ export const PlayTab = () => {
   const { data: rawGame } = useScaffoldReadContract({ contractName: "ClamsGame", functionName: "currentGame" });
   const { data: totalPooled } = useScaffoldReadContract({ contractName: "ClamsPool", functionName: "totalPooled" });
   const { data: jackpotPreview } = useScaffoldReadContract({
-    contractName: "ClamsGame",
-    functionName: "getJackpotValue",
-    args: [totalPooled],
-  });
+  contractName: "ClamsGame",
+  functionName: "getJackpotValue",
+  args: [totalPooled ?? 0n],
+});
   const { data: clawdBalance } = useScaffoldReadContract({
     contractName: "CLAWD",
     functionName: "balanceOf",
