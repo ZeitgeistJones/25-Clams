@@ -59,6 +59,301 @@ export const InvestTab = () => {
   const { writeContractAsync: writePool } = useScaffoldWriteContract({ contractName: "ClamsPool" });
 
   const shareValue =
+    (totalShares || 0n) > 0n && totalPooled !== undefined ? (totalPooled * 10n ** 18n) / totalShares! : undefined;
+
+  let depositParsed: bigint | undefined;
+  try {
+    depositParsed = depositAmount ? parseUnits(depositAmount, CLAWD_DECIMALS) : undefined;
+  } catch {
+    depositParsed = undefined;
+  }
+
+  const estimatedShares =
+    depositParsed !== undefined && totalShares !== undefined && totalPooled !== undefined
+      ? totalShares === 0n || totalPooled === 0n
+        ? depositParsed
+        : (depositParsed * totalShares) / totalPooled
+      : undefined;
+
+  let withdrawParsed: bigint | undefined;
+  try {
+    withdrawParsed = withdrawShares ? parseUnits(withdrawShares, CLAWD_DECIMALS) : undefined;
+  } catch {
+    withdrawParsed = undefined;
+  }
+
+  const withdrawCLAWD =
+    withdrawParsed !== undefined && (totalShares || 0n) > 0n && totalPooled !== undefined
+      ? (withdrawParsed * totalPooled) / totalShares!
+      : undefined;
+
+  const needsApproval = depositParsed !== undefined && (allowance === undefined || allowance < depositParsed);
+
+  const handleApprove = async () => {
+    if (approvalSubmitting || approvalCooldown || depositParsed === undefined) return;
+    setApprovalSubmitting(true);
+    try {
+      await writeClawd({ functionName: "approve", args: [POOL_ADDRESS, depositParsed] });
+      setApprovalCooldown(true);
+      setTimeout(() => {
+        setApprovalCooldown(false);
+        refetchAllowance();
+      }, 4000);
+    } catch {
+      notification.error("Approval failed");
+    } finally {
+      setApprovalSubmitting(false);
+    }
+  };
+
+  const handleDeposit = async () => {
+    if (depositSubmitting || depositParsed === undefined) return;
+    setDepositSubmitting(true);
+    try {
+      await writePool({ functionName: "deposit", args: [depositParsed] });
+      notification.success("Deposit successful!");
+      setDepositAmount("");
+    } catch {
+      notification.error("Deposit failed");
+    } finally {
+      setDepositSubmitting(false);
+    }
+  };
+
+  const handleWithdraw = async () => {
+    if (withdrawSubmitting || withdrawParsed === undefined) return;
+    setWithdrawSubmitting(true);
+    try {
+      await writePool({ functionName: "withdraw", args: [withdrawParsed] });
+      notification.success("Withdrawal successful!");
+      setWithdrawShares("");
+    } catch {
+      notification.error("Withdrawal failed");
+    } finally {
+      setWithdrawSubmitting(false);
+    }
+  };
+
+  const walletGate = !isConnected ? (
+    <RainbowKitCustomConnectButton />
+  ) : !onBase ? (
+    <button className="btn btn-primary" onClick={() => switchChain({ chainId: base.id })}>
+      Switch to Base
+    </button>
+  ) : null;
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Pool Stats */}
+      <div className="card bg-base-200 shadow-md">
+        <div className="card-body p-5">
+          <h3 className="card-title text-sm uppercase text-base-content/60">Pool Statistics</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-2">
+            <div>
+              <div className="text-xs text-base-content/50">Total Pooled</div>
+              <div className="text-xl font-bold">{fmt(totalPooled)} CLAWD</div>
+            </div>
+            <div>
+              <div className="text-xs text-base-content/50">Total Shares</div>
+              <div className="text-xl font-bold">{fmt(totalShares)}</div>
+            </div>
+            <div>
+              <div className="text-xs text-base-content/50">Share Value</div>
+              <div className="text-xl font-bold">{fmt(shareValue)} CLAWD</div>
+            </div>
+            <div>
+              <div className="text-xs text-base-content/50">Status</div>
+              <div className={`text-xl font-bold ${gameActive ? "text-success" : "text-warning"}`}>
+                {gameActive ? "Active" : "Idle"}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* User Stats */}
+      {isConnected && (
+        <div className="card bg-base-200 shadow-md border-l-4 border-primary">
+          <div className="card-body p-5">
+            <h3 className="card-title text-sm uppercase text-base-content/60">Your Position</h3>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-2">
+              <div>
+                <div className="text-xs text-base-content/50">Your Shares</div>
+                <div className="text-xl font-bold">{fmt(userShares)}</div>
+              </div>
+              <div>
+                <div className="text-xs text-base-content/50">Value in CLAWD</div>
+                <div className="text-xl font-bold">{fmt(userCLAWD)}</div>
+              </div>
+              <div>
+                <div className="text-xs text-base-content/50">Wallet Balance</div>
+                <div className="text-xl font-bold">{fmt(clawdBalance)}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="grid md:grid-cols-2 gap-4">
+        {/* Deposit */}
+        <div className="card bg-base-200 shadow-md">
+          <div className="card-body p-5">
+            <h3 className="card-title">Deposit</h3>
+            <p className="text-xs text-base-content/60">Provide liquidity to the pool and earn from game fees.</p>
+            <div className="form-control mt-2">
+              <label className="label">
+                <span className="label-text">Amount to Deposit (CLAWD)</span>
+              </label>
+              <input
+                type="number"
+                placeholder="0.0"
+                className="input input-bordered"
+                value={depositAmount}
+                onChange={e => setDepositAmount(e.target.value)}
+              />
+              {estimatedShares !== undefined && (
+                <label className="label">
+                  <span className="label-text-alt">You will receive ≈ {fmt(estimatedShares)} shares</span>
+                </label>
+              )}
+            </div>
+            <div className="card-actions mt-4">
+              {walletGate ? (
+                walletGate
+              ) : needsApproval ? (
+                <button
+                  className="btn btn-secondary w-full"
+                  onClick={handleApprove}
+                  disabled={approvalSubmitting || approvalCooldown || !depositAmount}
+                >
+                  {approvalSubmitting || approvalCooldown ? (
+                    <span className="loading loading-spinner loading-sm" />
+                  ) : null}
+                  Approve CLAWD
+                </button>
+              ) : (
+                <button
+                  className="btn btn-primary w-full"
+                  onClick={handleDeposit}
+                  disabled={depositSubmitting || !depositAmount}
+                >
+                  {depositSubmitting ? <span className="loading loading-spinner loading-sm" /> : null}
+                  Deposit
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Withdraw */}
+        <div className="card bg-base-200 shadow-md">
+          <div className="card-body p-5">
+            <h3 className="card-title">Withdraw</h3>
+            <p className="text-xs text-base-content/60">Redeem your shares for CLAWD.</p>
+            <div className="form-control mt-2">
+              <label className="label">
+                <span className="label-text">Shares to Redeem</span>
+                <span
+                  className="label-text-alt cursor-pointer text-primary"
+                  onClick={() => setWithdrawShares(formatUnits(userShares || 0n, CLAWD_DECIMALS))}
+                >
+                  Max: {fmt(userShares)}
+                </span>
+              </label>
+              <input
+                type="number"
+                placeholder="0.0"
+                className="input input-bordered"
+                value={withdrawShares}
+                onChange={e => setWithdrawShares(e.target.value)}
+              />
+              {withdrawCLAWD !== undefined && (
+                <label className="label">
+                  <span className="label-text-alt">You will receive ≈ {fmt(withdrawCLAWD)} CLAWD</span>
+                </label>
+              )}
+            </div>
+            <div className="card-actions mt-4">
+              {walletGate ? (
+                walletGate
+              ) : (
+                <button
+                  className="btn btn-primary w-full"
+                  onClick={handleWithdraw}
+                  disabled={withdrawSubmitting || !withdrawShares}
+                >
+                  {withdrawSubmitting ? <span className="loading loading-spinner loading-sm" /> : null}
+                  Withdraw
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+"use client";
+
+import { useState } from "react";
+import { Address } from "@scaffold-ui/components";
+import { formatUnits, parseUnits } from "viem";
+import { base } from "viem/chains";
+import { useAccount, useChainId, useSwitchChain } from "wagmi";
+import { CLAWD_DECIMALS } from "~~/app/_constants/clams";
+import { RainbowKitCustomConnectButton } from "~~/components/scaffold-eth";
+import { useScaffoldReadContract, useScaffoldWriteContract } from "~~/hooks/scaffold-eth";
+import { notification } from "~~/utils/scaffold-eth";
+
+const POOL_ADDRESS = "0x94a312581269433d52F83c8FFd34097370627E2a";
+
+const fmt = (v?: bigint) =>
+  v === undefined
+    ? "—"
+    : Number(formatUnits(v, CLAWD_DECIMALS)).toLocaleString(undefined, { maximumFractionDigits: 4 });
+
+export const InvestTab = () => {
+  const { address, isConnected } = useAccount();
+  const chainId = useChainId();
+  const { switchChain } = useSwitchChain();
+  const onBase = chainId === base.id;
+
+  const [depositAmount, setDepositAmount] = useState("");
+  const [withdrawShares, setWithdrawShares] = useState("");
+
+  const [approvalSubmitting, setApprovalSubmitting] = useState(false);
+  const [approvalCooldown, setApprovalCooldown] = useState(false);
+  const [depositSubmitting, setDepositSubmitting] = useState(false);
+  const [withdrawSubmitting, setWithdrawSubmitting] = useState(false);
+
+  const { data: totalPooled } = useScaffoldReadContract({ contractName: "ClamsPool", functionName: "totalPooled" });
+  const { data: totalShares } = useScaffoldReadContract({ contractName: "ClamsPool", functionName: "totalShares" });
+  const { data: gameActive } = useScaffoldReadContract({ contractName: "ClamsPool", functionName: "gameActive" });
+  const { data: userShares } = useScaffoldReadContract({
+    contractName: "ClamsPool",
+    functionName: "shares",
+    args: [address],
+  });
+  const { data: userCLAWD } = useScaffoldReadContract({
+    contractName: "ClamsPool",
+    functionName: "userSharesCLAWD",
+    args: [address],
+  });
+  const { data: clawdBalance } = useScaffoldReadContract({
+    contractName: "CLAWD",
+    functionName: "balanceOf",
+    args: [address],
+  });
+  const { data: allowance, refetch: refetchAllowance } = useScaffoldReadContract({
+    contractName: "CLAWD",
+    functionName: "allowance",
+    args: [address, POOL_ADDRESS],
+  });
+
+  const { writeContractAsync: writeClawd } = useScaffoldWriteContract({ contractName: "CLAWD" });
+  const { writeContractAsync: writePool } = useScaffoldWriteContract({ contractName: "ClamsPool" });
+
+  const shareValue =
     totalShares && totalShares > 0n && totalPooled !== undefined ? (totalPooled * 10n ** 18n) / totalShares : undefined;
 
   let depositParsed: bigint | undefined;
