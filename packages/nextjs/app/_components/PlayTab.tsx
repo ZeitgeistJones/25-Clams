@@ -114,7 +114,7 @@ export const PlayTab = () => {
 
   const elimNeeded = game && game.currentRound < CLAMS_PER_ROUND.length ? CLAMS_PER_ROUND[game.currentRound] : 0;
 
-  const forfeitDeadline = game ? game.lastActionTimestamp + FORFEIT_TIMEOUT_SECONDS : 0n;
+  const forfeitDeadline = game ? game.lastActionTimestamp + BigInt(FORFEIT_TIMEOUT_SECONDS) : 0n;
   const timedOut = game?.active ? BigInt(now) >= forfeitDeadline : false;
   const secondsLeft = game?.active ? Number(forfeitDeadline) - now : 0;
 
