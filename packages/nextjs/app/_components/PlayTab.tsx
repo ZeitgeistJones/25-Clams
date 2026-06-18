@@ -116,7 +116,7 @@ export const PlayTab = () => {
 
   const forfeitDeadline = game ? game.lastActionTimestamp + BigInt(FORFEIT_TIMEOUT_SECONDS) : 0n;
   const timedOut = game?.active ? BigInt(now) >= forfeitDeadline : false;
-  const secondsLeft = game?.active ? Number(forfeitDeadline) - now : 0;
+  const secondsLeft = game?.active ? Number(forfeitDeadline - BigInt(now)) : 0;
 
   // ---- Handlers ----
   const handleApprove = async () => {
