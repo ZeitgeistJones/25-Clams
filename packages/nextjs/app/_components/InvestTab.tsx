@@ -11,11 +11,16 @@ import { useScaffoldReadContract, useScaffoldWriteContract } from "~~/hooks/scaf
 import { notification } from "~~/utils/scaffold-eth";
 
 const POOL_ADDRESS = "0x94a312581269433d52F83c8FFd34097370627E2a";
+const PRECISION = BigInt("1000000000000000000");
 
-const fmt = (v?: bigint) =>
-  v === undefined
-    ? "—"
-    : Number(formatUnits(v, CLAWD_DECIMALS)).toLocaleString(undefined, { maximumFractionDigits: 4 });
+const fmt = (v?: bigint) => {
+  if (v === undefined) return "—";
+  try {
+    return Number(formatUnits(v, CLAWD_DECIMALS)).toLocaleString(undefined, { maximumFractionDigits: 4 });
+  } catch (e) {
+    return "—";
+  }
+};
 
 export const InvestTab = () => {
   const { address, isConnected } = useAccount();
@@ -59,7 +64,9 @@ export const InvestTab = () => {
   const { writeContractAsync: writePool } = useScaffoldWriteContract({ contractName: "ClamsPool" });
 
   const shareValue =
-    (totalShares || BigInt(0)) > BigInt(0) && totalPooled !== undefined ? (totalPooled * BigInt(10) ** BigInt(18)) / totalShares! : undefined;
+    (totalShares || BigInt(0)) > BigInt(0) && totalPooled !== undefined 
+      ? (totalPooled * PRECISION) / totalShares! 
+      : undefined;
 
   let depositParsed: bigint | undefined;
   try {
@@ -172,7 +179,6 @@ export const InvestTab = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Deposit */}
         <div className="card bg-base-200 shadow-md">
           <div className="card-body p-5">
             <h3 className="card-title">Deposit</h3>
@@ -225,7 +231,6 @@ export const InvestTab = () => {
           </div>
         </div>
 
-        {/* Withdraw */}
         <div className="card bg-base-200 shadow-md">
           <div className="card-body p-5">
             <h3 className="card-title">Withdraw</h3>
@@ -277,4 +282,3 @@ const Stat = ({ label, value }: { label: string; value: string }) => (
     <div className="text-lg font-semibold">{value}</div>
   </div>
 );
-// Forced change to trigger Vercel deployment
