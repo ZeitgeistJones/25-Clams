@@ -2,9 +2,12 @@
 
 import { useEffect, useState } from "react";
 import type { NextPage } from "next";
-import { InvestTab } from "~~/app/_components/InvestTab";
-import { PlayTab } from "~~/app/_components/PlayTab";
-import { RulesTab } from "~~/app/_components/RulesTab";
+import dynamic from "next/dynamic";
+
+// Dynamically import components with SSR disabled to prevent hydration mismatches
+const InvestTab = dynamic(() => import("~~/app/_components/InvestTab").then(mod => mod.InvestTab), { ssr: false });
+const PlayTab = dynamic(() => import("~~/app/_components/PlayTab").then(mod => mod.PlayTab), { ssr: false });
+const RulesTab = dynamic(() => import("~~/app/_components/RulesTab").then(mod => mod.RulesTab), { ssr: false });
 
 type Tab = "play" | "invest" | "rules";
 
@@ -15,6 +18,16 @@ const Home: NextPage = () => {
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  if (!mounted) {
+    return (
+      <div className="flex flex-col grow w-full items-center px-3 sm:px-5 py-6">
+        <div className="w-full max-w-5xl flex justify-center py-16">
+          <span className="loading loading-spinner loading-lg" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col grow w-full items-center px-3 sm:px-5 py-6">
@@ -27,29 +40,33 @@ const Home: NextPage = () => {
         </div>
 
         <div role="tablist" className="tabs tabs-boxed justify-center mb-6 bg-base-200">
-          <button role="tab" className={`tab ${tab === "play" ? "tab-active" : ""}`} onClick={() => setTab("play")}>
+          <button 
+            role="tab" 
+            className={`tab ${tab === "play" ? "tab-active" : ""}`} 
+            onClick={() => setTab("play")}
+          >
             Play
           </button>
-          <button role="tab" className={`tab ${tab === "invest" ? "tab-active" : ""}`} onClick={() => setTab("invest")}>
+          <button 
+            role="tab" 
+            className={`tab ${tab === "invest" ? "tab-active" : ""}`} 
+            onClick={() => setTab("invest")}
+          >
             Invest
           </button>
-          <button role="tab" className={`tab ${tab === "rules" ? "tab-active" : ""}`} onClick={() => setTab("rules")}>
+          <button 
+            role="tab" 
+            className={`tab ${tab === "rules" ? "tab-active" : ""}`} 
+            onClick={() => setTab("rules")}
+          >
             Rules
           </button>
         </div>
 
-        <div>
-          {!mounted ? (
-            <div className="flex justify-center py-16">
-              <span className="loading loading-spinner loading-lg" />
-            </div>
-          ) : (
-            <>
-              {tab === "play" && <PlayTab />}
-              {tab === "invest" && <InvestTab />}
-              {tab === "rules" && <RulesTab />}
-            </>
-          )}
+        <div className="min-h-[400px]">
+          {tab === "play" && <PlayTab />}
+          {tab === "invest" && <InvestTab />}
+          {tab === "rules" && <RulesTab />}
         </div>
       </div>
     </div>
