@@ -25,6 +25,19 @@ const fmt = (v?: bigint) =>
     ? "—"
     : Number(formatUnits(v, CLAWD_DECIMALS)).toLocaleString(undefined, { maximumFractionDigits: 2 });
 
+type CurrentGame = {
+  contestant: string;
+  jackpotValue: bigint;
+  contestantClam: number;
+  currentRound: number;
+  lastActionTimestamp: bigint;
+  currentOffer: bigint;
+  active: boolean;
+  vrfPending: boolean;
+  roundEliminated: boolean;
+  vrfRequestId: bigint;
+};
+
 export const PlayTab = () => {
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
@@ -56,337 +69,445 @@ export const PlayTab = () => {
     functionName: "getJackpotValue",
     args: [totalPooled ?? 0n],
   });
+  const { data: clawdBalance } = useScaffoldReadContract({
+    contractName: "CLAWD",
+    functionName: "balanceOf",
+    args: [address],
+  });
+  const { data: allowance, refetch: refetchAllowance } = useScaffoldReadContract({
+    contractName: "CLAWD",
+    functionName: "allowance",
+    args: [address, GAME_ADDRESS],
+  });
 
   // Safely map rawGame to a typed object using named properties
   const game = useMemo(() => {
     if (!rawGame) return null;
     // rawGame is returned as an object with named properties by viem/wagmi
     const g = rawGame as any;
-    return {
-      contestant: g.contestant,
-      jackpotValue: g.jackpotValue,
-      contestantClam: Number(g.contestantClam),
-      currentRound: Number(g.currentRound),
-      lastActionTimestamp: g.lastActionTimestamp,
-      currentOffer: g.currentOffer,
-      active: g.active,
-      vrfPending: g.vrfPending,
-      roundEliminated: g.roundEliminated,
-      vrfRequestId: g.vrfRequestId,
-    };
+    try {
+      return {
+        contestant: String(g.contestant || ""),
+        jackpotValue: BigInt(g.jackpotValue || 0n),
+        contestantClam: Number(g.contestantClam || 0),
+        currentRound: Number(g.currentRound || 0),
+        lastActionTimestamp: BigInt(g.lastActionTimestamp || 0n),
+        currentOffer: BigInt(g.currentOffer || 0n),
+        active: Boolean(g.active),
+        vrfPending: Boolean(g.vrfPending),
+        roundEliminated: Boolean(g.roundEliminated),
+        vrfRequestId: BigInt(g.vrfRequestId || 0n),
+      } as CurrentGame;
+    } catch (e) {
+      console.error("Error mapping game data:", e);
+      return null;
+    }
   }, [rawGame]);
 
-  const { data: eliminatedEvents } = useScaffoldEventHistory({
+  const { data: elimEvents } = useScaffoldEventHistory({
     contractName: "ClamsGame",
     eventName: "ClamsEliminated",
     fromBlock: 47124293n,
     watch: true,
+    blockData: false,
   });
 
-  const eliminatedIds = useMemo(() => {
-    const set = new Set<number>();
-    eliminatedEvents?.forEach(e => {
-      e.args.clamIds?.forEach((id: any) => set.add(Number(id)));
-    });
-    return set;
-  }, [eliminatedEvents]);
+  // Map eliminated clamId -> revealed value, gathered from event history.
+  const eliminatedValues = useMemo(() => {
+    const map = new Map<number, bigint>();
+    if (!elimEvents) return map;
+    for (const ev of elimEvents) {
+      const args = (ev as any).args;
+      const ids = args?.clamIds;
+      const vals = args?.values;
+      if (!ids || !vals) continue;
+      ids.forEach((id: any, i: number) => {
+        map.set(Number(id), BigInt(vals[i] || 0n));
+      });
+    }
+    return map;
+  }, [elimEvents]);
 
-  const { writeContractAsync: writeClamsGame } = useScaffoldWriteContract({ contractName: "ClamsGame" });
   const { writeContractAsync: writeClawd } = useScaffoldWriteContract({ contractName: "CLAWD" });
-  const { data: allowance } = useScaffoldReadContract({
-    contractName: "CLAWD",
-    functionName: "allowance",
-    args: [address, GAME_ADDRESS],
-  });
+  const { writeContractAsync: writeGame } = useScaffoldWriteContract({ contractName: "ClamsGame" });
 
-  const needsApproval = isConnected && (allowance ?? 0n) < ENTRY_FEE;
-  const isMyGame = game?.active && game?.contestant === address;
-  const isMyPending = game?.vrfPending && game?.contestant === address;
+  const needsApproval = (allowance ?? 0n) < ENTRY_FEE;
+  const isContestant = !!game && !!address && game.contestant.toLowerCase() === address.toLowerCase();
 
-  const secondsLeft = useMemo(() => {
-    if (!game?.lastActionTimestamp) return 0;
-    const deadline = game.lastActionTimestamp + BigInt(FORFEIT_TIMEOUT_SECONDS);
-    const diff = deadline - BigInt(now);
-    return diff > 0n ? Number(diff) : 0;
-  }, [game?.lastActionTimestamp, now]);
+  const elimNeeded =
+    game && game.currentRound < CLAMS_PER_ROUND.length ? Number(CLAMS_PER_ROUND[game.currentRound]) : 0;
 
+  const forfeitDeadline =
+    game && game.lastActionTimestamp > 0n ? game.lastActionTimestamp + FORFEIT_TIMEOUT_SECONDS : 0n;
+  
+  const bigNow = BigInt(now);
+  const timedOut = game?.active && forfeitDeadline > 0n ? bigNow >= forfeitDeadline : false;
+  const secondsLeft =
+    game?.active && forfeitDeadline > 0n ? (forfeitDeadline > bigNow ? Number(forfeitDeadline - bigNow) : 0) : 0;
+
+  // ---- Handlers ----
   const handleApprove = async () => {
+    if (approvalSubmitting || approvalCooldown) return;
     setApprovalSubmitting(true);
     try {
-      await writeClawd({ functionName: "approve", args: [GAME_ADDRESS, ENTRY_FEE * 100n] });
+      await writeClawd({ functionName: "approve", args: [GAME_ADDRESS, ENTRY_FEE] });
       setApprovalCooldown(true);
-      setTimeout(() => setApprovalCooldown(false), 3000);
-    } catch (e) {
-      console.error(e);
+      setTimeout(() => {
+        setApprovalCooldown(false);
+        refetchAllowance();
+      }, 4000);
+    } catch {
+      notification.error("Approval failed");
     } finally {
       setApprovalSubmitting(false);
     }
   };
 
   const handleStart = async () => {
-    if (chosenClam === null) return;
+    if (startSubmitting || chosenClam === null) return;
     setStartSubmitting(true);
     try {
-      await writeClamsGame({ functionName: "startGame", args: [chosenClam] });
-    } catch (e) {
-      console.error(e);
+      await writeGame({ functionName: "startGame", args: [BigInt(chosenClam)] });
+      notification.success("Game starting — shuffling clams!");
+    } catch {
+      notification.error("Failed to start game");
     } finally {
       setStartSubmitting(false);
     }
   };
 
   const handleEliminate = async () => {
-    if (selectedForElim.size === 0) return;
+    if (elimSubmitting || selectedForElim.size !== elimNeeded) return;
     setElimSubmitting(true);
     try {
-      await writeClamsGame({ functionName: "eliminateClams", args: [Array.from(selectedForElim)] });
+      const ids = Array.from(selectedForElim).sort((a, b) => a - b).map(id => BigInt(id));
+      await writeGame({ functionName: "eliminateClams", args: [ids] });
+      notification.success("Clams eliminated!");
       setSelectedForElim(new Set());
-    } catch (e) {
-      console.error(e);
+    } catch {
+      notification.error("Elimination failed");
     } finally {
       setElimSubmitting(false);
     }
   };
 
-  const handleDeal = async () => {
+  const handleDeal = async (take: boolean) => {
+    if (dealSubmitting) return;
     setDealSubmitting(true);
     try {
-      await writeClamsGame({ functionName: "deal" });
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setDealSubmitting(false);
-    }
-  };
-
-  const handleNoDeal = async () => {
-    setDealSubmitting(true);
-    try {
-      await writeClamsGame({ functionName: "noDeal" });
-    } catch (e) {
-      console.error(e);
+      await writeGame({ functionName: take ? "deal" : "noDeal" });
+      notification.success(take ? "Deal taken!" : "No deal — keep playing!");
+    } catch {
+      notification.error("Action failed");
     } finally {
       setDealSubmitting(false);
     }
   };
 
   const handleFinalReveal = async () => {
+    if (dealSubmitting) return;
     setDealSubmitting(true);
     try {
-      await writeClamsGame({ functionName: "finalReveal" });
-    } catch (e) {
-      console.error(e);
+      await writeGame({ functionName: "finalReveal" });
+      notification.success("Final reveal!");
+    } catch {
+      notification.error("Final reveal failed");
     } finally {
       setDealSubmitting(false);
     }
   };
 
   const handleForfeit = async () => {
+    if (forfeitSubmitting) return;
     setForfeitSubmitting(true);
     try {
-      await writeClamsGame({ functionName: "forfeit" });
-    } catch (e) {
-      console.error(e);
+      await writeGame({ functionName: "forfeit" });
+      notification.success("Game forfeited");
+    } catch {
+      notification.error("Forfeit failed");
     } finally {
       setForfeitSubmitting(false);
     }
   };
 
   const toggleElim = (id: number) => {
-    if (eliminatedIds.has(id) || id === game?.contestantClam) return;
-    const next = new Set(selectedForElim);
-    if (next.has(id)) next.delete(id);
-    else {
-      const round = game?.currentRound ?? 0;
-      const limit = CLAMS_PER_ROUND[round] || 0;
-      if (next.size < limit) next.add(id);
-    }
-    setSelectedForElim(next);
+    if (!isContestant || !game?.active) return;
+    if (id === game.contestantClam) return; // can't eliminate your own clam
+    if (eliminatedValues.has(id)) return;
+    setSelectedForElim(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else if (next.size < elimNeeded) next.add(id);
+      return next;
+    });
   };
 
+  const noActiveGame = game && !game.active && !game.vrfPending;
+  const isFinalRound = game ? game.currentRound >= TOTAL_ROUNDS - 1 : false;
+  const showBankerOffer =
+    !!game?.active && isContestant && !!game.roundEliminated && (game.currentOffer || 0n) > 0n && !isFinalRound;
+
+  // ---- Wallet gate (single button) ----
+  const walletGate = !isConnected ? (
+    <RainbowKitCustomConnectButton />
+  ) : !onBase ? (
+    <button className="btn btn-primary" onClick={() => switchChain({ chainId: base.id })}>
+      Switch to Base
+    </button>
+  ) : null;
+
   return (
-    <div className="flex flex-col gap-6 max-w-4xl mx-auto">
-      {/* Header Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="bg-base-200 p-4 rounded-xl shadow-sm">
-          <div className="text-xs uppercase text-base-content/60">Jackpot</div>
-          <div className="text-xl font-bold text-primary">{fmt(game?.active ? game.jackpotValue : jackpotPreview)} CLAWD</div>
-        </div>
-        <div className="bg-base-200 p-4 rounded-xl shadow-sm">
-          <div className="text-xs uppercase text-base-content/60">Entry Fee</div>
-          <div className="text-xl font-bold">{fmt(ENTRY_FEE)} CLAWD</div>
-        </div>
-        <div className="bg-base-200 p-4 rounded-xl shadow-sm">
-          <div className="text-xs uppercase text-base-content/60">Status</div>
-          <div className="text-sm font-medium">
-            {game?.vrfPending ? "VRF Pending..." : game?.active ? `Round ${game.currentRound + 1}` : "Waiting to Start"}
+    <div className="flex flex-col gap-4">
+      {/* Jackpot / fee summary */}
+      <div className="card bg-base-200 shadow-md">
+        <div className="card-body p-5 flex-row flex-wrap justify-between items-center gap-4">
+          <div>
+            <div className="text-xs uppercase text-base-content/60">Jackpot</div>
+            <div className="text-2xl font-bold">{fmt(game?.active ? game.jackpotValue : jackpotPreview)} CLAWD</div>
           </div>
-        </div>
-        <div className="bg-base-200 p-4 rounded-xl shadow-sm">
-          <div className="text-xs uppercase text-base-content/60">Time Left</div>
-          <div className="text-xl font-mono font-bold">
-            {game?.active ? `${Math.floor(secondsLeft / 3600)}h ${Math.floor((secondsLeft % 3600) / 60)}m` : "—"}
+          <div>
+            <div className="text-xs uppercase text-base-content/60">Entry Fee</div>
+            <div className="text-2xl font-bold">1,000 CLAWD</div>
           </div>
-        </div>
-      </div>
-
-      {/* Main Game Area */}
-      <div className="card bg-base-100 shadow-xl border border-base-300">
-        <div className="card-body p-4 sm:p-8">
-          {!isConnected ? (
-            <div className="text-center py-12">
-              <h2 className="text-2xl font-bold mb-4">Ready to play?</h2>
-              <p className="mb-6 text-base-content/70">Connect your wallet to start a new game of 25 Clams.</p>
-              <RainbowKitCustomConnectButton />
-            </div>
-          ) : !onBase ? (
-            <div className="text-center py-12">
-              <h2 className="text-2xl font-bold mb-4">Wrong Network</h2>
-              <p className="mb-6 text-base-content/70">Please switch to Base Mainnet to play.</p>
-              <button className="btn btn-primary" onClick={() => switchChain({ chainId: base.id })}>
-                Switch to Base
-              </button>
-            </div>
-          ) : isMyPending ? (
-            <div className="text-center py-12">
-              <span className="loading loading-ring loading-lg text-primary mb-4"></span>
-              <h2 className="text-2xl font-bold">Waiting for VRF...</h2>
-              <p className="text-base-content/70">Chainlink is shuffling the clams. This usually takes 1-2 minutes.</p>
-            </div>
-          ) : isMyGame ? (
-            <div className="flex flex-col gap-8">
-              {/* Game UI */}
-              <div className="flex flex-col sm:flex-row justify-between items-center gap-4 bg-base-200 p-4 rounded-xl">
-                <div>
-                  <h3 className="font-bold text-lg">Your Clam: #{game.contestantClam}</h3>
-                  <p className="text-sm text-base-content/70">Don't eliminate this one!</p>
-                </div>
-                <div className="flex gap-2">
-                  {game.roundEliminated ? (
-                    <>
-                      <button className="btn btn-success" onClick={handleDeal} disabled={dealSubmitting}>
-                        Deal ({fmt(game.currentOffer)} CLAWD)
-                      </button>
-                      <button className="btn btn-outline" onClick={handleNoDeal} disabled={dealSubmitting}>
-                        No Deal
-                      </button>
-                    </>
-                  ) : game.currentRound === TOTAL_ROUNDS ? (
-                    <button className="btn btn-primary" onClick={handleFinalReveal} disabled={dealSubmitting}>
-                      Final Reveal
-                    </button>
-                  ) : (
-                    <button
-                      className="btn btn-primary"
-                      onClick={handleEliminate}
-                      disabled={elimSubmitting || selectedForElim.size !== CLAMS_PER_ROUND[game.currentRound]}
-                    >
-                      Eliminate {selectedForElim.size}/{CLAMS_PER_ROUND[game.currentRound]}
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              <ClamGrid
-                eliminatedIds={eliminatedIds}
-                selectedForElim={selectedForElim}
-                onToggle={toggleElim}
-                myClamId={game.contestantClam}
-              />
-            </div>
-          ) : game?.active ? (
-            <div className="text-center py-12">
-              <h2 className="text-2xl font-bold mb-2">Game in Progress</h2>
-              <p className="text-base-content/70 mb-6">
-                Contestant: <Address address={game.contestant} />
-              </p>
-              {secondsLeft === 0 && (
-                <button className="btn btn-warning" onClick={handleForfeit} disabled={forfeitSubmitting}>
-                  Forfeit Stalled Game
-                </button>
-              )}
-            </div>
-          ) : (
-            <div className="flex flex-col items-center gap-8 py-4">
-              <h2 className="text-2xl font-bold">Pick Your Clam</h2>
-              <div className="grid grid-cols-5 gap-4">
-                {Array.from({ length: 25 }).map((_, i) => (
-                  <button
-                    key={i}
-                    className={`w-12 h-12 sm:w-16 sm:h-16 rounded-xl flex items-center justify-center transition-all ${
-                      chosenClam === i ? "bg-primary text-primary-content scale-110 shadow-lg" : "bg-base-200 hover:bg-base-300"
-                    }`}
-                    onClick={() => setChosenClam(i)}
-                  >
-                    <span className="font-bold text-lg">#{i}</span>
-                  </button>
-                ))}
-              </div>
-              {needsApproval ? (
-                <button className="btn btn-secondary btn-wide" onClick={handleApprove} disabled={approvalSubmitting || approvalCooldown}>
-                  {approvalSubmitting ? <span className="loading loading-spinner"></span> : "Approve CLAWD"}
-                </button>
-              ) : (
-                <button className="btn btn-primary btn-wide" onClick={handleStart} disabled={startSubmitting || chosenClam === null}>
-                  {startSubmitting ? <span className="loading loading-spinner"></span> : "Start Game (1,000 CLAWD)"}
-                </button>
-              )}
+          {isConnected && (
+            <div>
+              <div className="text-xs uppercase text-base-content/60">Your CLAWD</div>
+              <div className="text-2xl font-bold">{fmt(clawdBalance)}</div>
             </div>
           )}
         </div>
       </div>
 
-      {/* Footer Links */}
-      <div className="flex justify-center gap-4 text-sm text-base-content/50">
-        <a href={`https://basescan.org/address/${GAME_ADDRESS}`} target="_blank" rel="noreferrer" className="hover:underline">
-          ClamsGame Contract
-        </a>
-        <span>•</span>
-        <a href="https://basescan.org/address/0x94a312581269433d52F83c8FFd34097370627E2a" target="_blank" rel="noreferrer" className="hover:underline">
-          ClamsPool Contract
-        </a>
-      </div>
+      {/* VRF pending */}
+      {game?.vrfPending && (
+        <div className="card bg-base-200 shadow-md">
+          <div className="card-body items-center text-center p-8">
+            <span className="loading loading-spinner loading-lg" />
+            <h3 className="text-xl font-bold mt-3">Shuffling clams... 🎲</h3>
+            <p className="text-base-content/70">Waiting for Chainlink VRF to seed the board.</p>
+          </div>
+        </div>
+      )}
+
+      {/* No active game: start flow */}
+      {noActiveGame && (
+        <div className="card bg-base-200 shadow-md">
+          <div className="card-body p-5">
+            <h3 className="card-title">Start a new game</h3>
+            <p className="text-base-content/70 text-sm">
+              Pick the clam you want to hold for the whole game, then approve and start.
+            </p>
+
+            <ClamGrid
+              eliminatedValues={eliminatedValues}
+              heldClam={chosenClam !== null ? Number(chosenClam) : null}
+              selectionMode
+              selected={chosenClam !== null ? new Set([chosenClam]) : new Set()}
+              onClamClick={id => setChosenClam(id)}
+            />
+
+            <div className="mt-2">
+              {chosenClam !== null ? (
+                <p className="text-sm">
+                  Holding: <span className="font-semibold">{CLAM_CHARACTERS[chosenClam].name}</span> (#{chosenClam})
+                </p>
+              ) : (
+                <p className="text-sm text-base-content/60">No clam selected yet.</p>
+              )}
+            </div>
+
+            <div className="mt-2">
+              {walletGate ? (
+                walletGate
+              ) : needsApproval ? (
+                <button
+                  className="btn btn-secondary"
+                  onClick={handleApprove}
+                  disabled={approvalSubmitting || approvalCooldown}
+                >
+                  {approvalSubmitting || approvalCooldown ? (
+                    <span className="loading loading-spinner loading-sm" />
+                  ) : null}
+                  Approve 1,000 CLAWD
+                </button>
+              ) : (
+                <button
+                  className="btn btn-primary"
+                  onClick={handleStart}
+                  disabled={startSubmitting || chosenClam === null}
+                >
+                  {startSubmitting ? <span className="loading loading-spinner loading-sm" /> : null}
+                  Start Game
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Active game */}
+      {game?.active && (
+        <>
+          <div className="card bg-base-200 shadow-md">
+            <div className="card-body p-5">
+              <div className="flex flex-wrap justify-between gap-4">
+                <div>
+                  <div className="text-xs uppercase text-base-content/60">Round</div>
+                  <div className="text-lg font-semibold">
+                    {Math.min(game.currentRound + 1, TOTAL_ROUNDS)} of {TOTAL_ROUNDS}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase text-base-content/60">Contestant</div>
+                  <Address address={game.contestant} />
+                </div>
+                <div>
+                  <div className="text-xs uppercase text-base-content/60">Banker Offer</div>
+                  <div className="text-lg font-semibold">
+                    {game.currentOffer > 0n ? `${fmt(game.currentOffer)} CLAWD` : "—"}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase text-base-content/60">Forfeit In</div>
+                  <div className="text-lg font-semibold">
+                    {timedOut
+                      ? "Timed out"
+                      : `${Math.max(0, Math.floor(secondsLeft / 3600))}h ${Math.max(0, Math.floor((secondsLeft % 3600) / 60))}m`}
+                  </div>
+                </div>
+              </div>
+
+              {!isContestant && (
+                <div className="alert alert-info mt-2">
+                  <span>👀 Spectator view — you are not the contestant.</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* The board */}
+          <div className="card bg-base-200 shadow-md">
+            <div className="card-body p-5">
+              <h3 className="card-title">The Board</h3>
+              {isContestant && !game.roundEliminated && !isFinalRound && (
+                <p className="text-sm">
+                  Select clams to open this round — Selected: {selectedForElim.size}/{elimNeeded}
+                </p>
+              )}
+              <ClamGrid
+                eliminatedValues={eliminatedValues}
+                heldClam={game.contestantClam}
+                selectionMode={isContestant && !game.roundEliminated && !isFinalRound}
+                selected={selectedForElim}
+                onClamClick={toggleElim}
+              />
+
+              {/* Contestant actions */}
+              {isContestant && (
+                <div className="mt-3 flex flex-col gap-3">
+                  {game.vrfPending ? (
+                    <div className="flex items-center gap-2 text-warning">
+                      <span className="loading loading-spinner loading-sm" />
+                      <span>VRF Shuffling...</span>
+                    </div>
+                  ) : isFinalRound ? (
+                    <button className="btn btn-primary" onClick={handleFinalReveal} disabled={dealSubmitting}>
+                      {dealSubmitting ? <span className="loading loading-spinner loading-sm" /> : null}
+                      Final Reveal
+                    </button>
+                  ) : !game.roundEliminated ? (
+                    <button
+                      className="btn btn-primary"
+                      onClick={handleEliminate}
+                      disabled={elimSubmitting || selectedForElim.size !== elimNeeded || elimNeeded === 0}
+                    >
+                      {elimSubmitting ? <span className="loading loading-spinner loading-sm" /> : null}
+                      Confirm Eliminations
+                    </button>
+                  ) : null}
+                </div>
+              )}
+
+              {/* Forfeit available to anyone after timeout */}
+              {timedOut && !walletGate && (
+                <button className="btn btn-error btn-outline mt-2" onClick={handleForfeit} disabled={forfeitSubmitting}>
+                  {forfeitSubmitting ? <span className="loading loading-spinner loading-sm" /> : null}
+                  Forfeit (timed out)
+                </button>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Banker offer modal */}
+      {showBankerOffer && (
+        <div className="modal modal-open">
+          <div className="modal-box bg-base-200">
+            <h3 className="font-bold text-lg">🏦 The banker offers</h3>
+            <p className="py-4 text-3xl font-bold text-center">{fmt(game.currentOffer)} CLAWD</p>
+            <div className="modal-action justify-center gap-3">
+              <button className="btn btn-success" onClick={() => handleDeal(true)} disabled={dealSubmitting}>
+                {dealSubmitting ? <span className="loading loading-spinner loading-sm" /> : null}
+                Deal
+              </button>
+              <button className="btn btn-outline" onClick={() => handleDeal(false)} disabled={dealSubmitting}>
+                No Deal
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
+// ---- Grid ----
 const ClamGrid = ({
-  eliminatedIds,
-  selectedForElim,
-  onToggle,
-  myClamId,
+  eliminatedValues,
+  heldClam,
+  selectionMode,
+  selected,
+  onClamClick,
 }: {
-  eliminatedIds: Set<number>;
-  selectedForElim: Set<number>;
-  onToggle: (id: number) => void;
-  myClamId: number;
+  eliminatedValues: Map<number, bigint>;
+  heldClam: number | null;
+  selectionMode: boolean;
+  selected: Set<number>;
+  onClamClick: (id: number) => void;
 }) => {
   return (
-    <div className="grid grid-cols-5 gap-3 sm:gap-4">
-      {Array.from({ length: 25 }).map((_, i) => {
-        const isEliminated = eliminatedIds.has(i);
-        const isSelected = selectedForElim.has(i);
-        const isMine = i === myClamId;
+    <div className="grid grid-cols-5 gap-2 sm:gap-3">
+      {CLAM_CHARACTERS.map((char, id) => {
+        const eliminated = eliminatedValues.has(id);
+        const isHeld = heldClam === id;
+        const isSelected = selected.has(id);
+        const clickable =
+          selectionMode && !eliminated && !(isHeld && selectionMode && heldClam !== null && !isSelected);
 
         return (
           <button
-            key={i}
-            disabled={isEliminated || isMine}
-            onClick={() => onToggle(i)}
-            className={`relative aspect-square rounded-xl flex flex-col items-center justify-center transition-all border-2 ${
-              isEliminated
-                ? "bg-base-300 border-transparent opacity-40 grayscale"
-                : isMine
-                ? "bg-primary/10 border-primary shadow-inner"
-                : isSelected
-                ? "bg-secondary/20 border-secondary scale-105 shadow-md"
-                : "bg-base-200 border-transparent hover:border-base-content/20"
-            }`}
+            key={id}
+            type="button"
+            onClick={() => onClamClick(id)}
+            disabled={!selectionMode || eliminated}
+            className={[
+              "relative flex flex-col items-center rounded-xl p-2 transition bg-base-100 border-2",
+              eliminated ? "opacity-40 border-base-300 grayscale" : "border-base-300",
+              isHeld ? "ring-2 ring-primary border-primary" : "",
+              isSelected ? "border-warning ring-2 ring-warning" : "",
+              clickable && !eliminated ? "hover:border-primary cursor-pointer" : "cursor-default",
+            ].join(" ")}
           >
-            <ClamAvatar char={CLAM_CHARACTERS[i % CLAM_CHARACTERS.length]} size={40} />
-            <span className={`text-xs font-bold mt-1 ${isMine ? "text-primary" : ""}`}>
-              {isMine ? "MINE" : isEliminated ? "X" : `#${i}`}
-            </span>
+            <ClamAvatar char={char} size={48} />
+            <span className="text-[10px] font-semibold mt-1 truncate w-full text-center">{char.name}</span>
+            <span className="text-[9px] text-base-content/50">#{id}</span>
+            {eliminated && <span className="text-[10px] font-bold text-error">{fmt(eliminatedValues.get(id))}</span>}
+            {isHeld && (
+              <span className="absolute top-0 right-0 text-[9px] bg-primary text-primary-content px-1 rounded-bl">
+                YOURS
+              </span>
+            )}
           </button>
         );
       })}
