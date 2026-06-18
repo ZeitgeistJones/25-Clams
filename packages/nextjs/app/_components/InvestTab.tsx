@@ -68,7 +68,14 @@ export const InvestTab = () => {
     depositParsed = undefined;
   }
 
-  const needsApproval = allowance === undefined || (depositParsed !== undefined && allowance < depositParsed);
+  let withdrawParsed: bigint | undefined;
+  try {
+    withdrawParsed = withdrawShares ? parseUnits(withdrawShares, 18) : undefined;
+  } catch {
+    withdrawParsed = undefined;
+  }
+
+  const needsApproval = depositParsed && (allowance === undefined || allowance < depositParsed);
 
   const handleApprove = async () => {
     if (approvalSubmitting || approvalCooldown || !depositParsed) return;
@@ -102,11 +109,10 @@ export const InvestTab = () => {
   };
 
   const handleWithdraw = async () => {
-    if (withdrawSubmitting || !withdrawShares) return;
+    if (withdrawSubmitting || !withdrawParsed) return;
     setWithdrawSubmitting(true);
     try {
-      const shares = parseUnits(withdrawShares, 18);
-      await writePool({ functionName: "withdraw", args: [shares] });
+      await writePool({ functionName: "withdraw", args: [withdrawParsed] });
       notification.success("Withdrawal successful!");
       setWithdrawShares("");
     } catch {
@@ -125,75 +131,66 @@ export const InvestTab = () => {
   ) : null;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
       {/* Pool Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="card bg-base-200 shadow-md">
-          <div className="card-body p-5">
-            <div className="text-xs uppercase text-base-content/60">Total Pooled</div>
-            <div className="text-2xl font-bold">{fmt(totalPooled)} CLAWD</div>
-          </div>
-        </div>
-        <div className="card bg-base-200 shadow-md">
-          <div className="card-body p-5">
-            <div className="text-xs uppercase text-base-content/60">Share Value</div>
-            <div className="text-2xl font-bold">
-              {shareValue !== undefined
-                ? Number(formatUnits(shareValue, 18)).toLocaleString(undefined, { maximumFractionDigits: 6 })
-                : "—"}{" "}
-              CLAWD
+      <div className="card bg-base-200 shadow-md">
+        <div className="card-body p-5">
+          <h3 className="card-title text-sm uppercase text-base-content/60">Pool Statistics</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-2">
+            <div>
+              <div className="text-xs text-base-content/50">Total Pooled</div>
+              <div className="text-xl font-bold">{fmt(totalPooled)} CLAWD</div>
             </div>
-          </div>
-        </div>
-        <div className="card bg-base-200 shadow-md">
-          <div className="card-body p-5">
-            <div className="text-xs uppercase text-base-content/60">Pool Status</div>
-            <div className="text-2xl font-bold">{gameActive ? "Locked (Game Active)" : "Open"}</div>
+            <div>
+              <div className="text-xs text-base-content/50">Share Value</div>
+              <div className="text-xl font-bold">{shareValue ? Number(formatUnits(shareValue, 18)).toFixed(6) : "—"}</div>
+            </div>
+            <div>
+              <div className="text-xs text-base-content/50">Pool Status</div>
+              <div className="text-xl font-bold">{gameActive ? "🎮 Game Active" : "💤 Idle"}</div>
+            </div>
           </div>
         </div>
       </div>
 
       {/* User Stats */}
-      {isConnected && (
-        <div className="card bg-base-200 shadow-md border border-primary/20">
-          <div className="card-body p-5 flex-row flex-wrap justify-between items-center gap-4">
+      <div className="card bg-base-200 shadow-md border-l-4 border-primary">
+        <div className="card-body p-5">
+          <h3 className="card-title text-sm uppercase text-base-content/60">Your Investment</h3>
+          <div className="grid grid-cols-2 gap-4 mt-2">
             <div>
-              <div className="text-xs uppercase text-base-content/60">Your Shares</div>
-              <div className="text-xl font-bold">
-                {userShares !== undefined
-                  ? Number(formatUnits(userShares, 18)).toLocaleString(undefined, { maximumFractionDigits: 4 })
-                  : "—"}
-              </div>
+              <div className="text-xs text-base-content/50">Your Shares</div>
+              <div className="text-xl font-bold">{userShares ? Number(formatUnits(userShares, 18)).toFixed(4) : "0.0000"}</div>
             </div>
             <div>
-              <div className="text-xs uppercase text-base-content/60">Value</div>
-              <div className="text-xl font-bold">{fmt(userCLAWD)} CLAWD</div>
-            </div>
-            <div>
-              <div className="text-xs uppercase text-base-content/60">Wallet Balance</div>
-              <div className="text-xl font-bold">{fmt(clawdBalance)} CLAWD</div>
+              <div className="text-xs text-base-content/50">Value in CLAWD</div>
+              <div className="text-xl font-bold">{fmt(userCLAWD)}</div>
             </div>
           </div>
         </div>
-      )}
+      </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {/* Actions */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Deposit */}
         <div className="card bg-base-200 shadow-md">
           <div className="card-body p-5">
-            <h3 className="card-title">Deposit</h3>
-            <p className="text-sm text-base-content/70">Add CLAWD to the pool to earn from game entry fees.</p>
+            <h3 className="card-title text-lg">Deposit</h3>
+            <p className="text-xs text-base-content/60">Invest CLAWD to earn a share of game entry fees.</p>
 
             <div className="form-control mt-2">
-              <div className="input-group">
+              <div className="label p-1">
+                <span className="label-text-alt">Balance: {fmt(clawdBalance)}</span>
+              </div>
+              <div className="join">
                 <input
                   type="number"
                   placeholder="Amount"
-                  className="input input-bordered w-full"
+                  className="input input-bordered join-item w-full"
                   value={depositAmount}
                   onChange={e => setDepositAmount(e.target.value)}
                 />
-                <button className="btn btn-ghost btn-sm absolute right-2 top-3" onClick={() => setDepositAmount(formatUnits(clawdBalance ?? 0n, CLAWD_DECIMALS))}>
+                <button className="btn btn-ghost join-item border-base-300" onClick={() => setDepositAmount(formatUnits(clawdBalance ?? 0n, CLAWD_DECIMALS))}>
                   MAX
                 </button>
               </div>
@@ -202,25 +199,23 @@ export const InvestTab = () => {
             <div className="mt-4">
               {walletGate ? (
                 walletGate
-              ) : gameActive ? (
-                <button className="btn btn-disabled w-full">Pool Locked</button>
               ) : needsApproval ? (
                 <button
                   className="btn btn-secondary w-full"
                   onClick={handleApprove}
-                  disabled={approvalSubmitting || approvalCooldown || !depositParsed}
+                  disabled={approvalSubmitting || approvalCooldown || !depositAmount}
                 >
-                  {approvalSubmitting || approvalCooldown ? <span className="loading loading-spinner loading-sm" /> : null}
+                  {approvalSubmitting ? <span className="loading loading-spinner loading-sm" /> : null}
                   Approve CLAWD
                 </button>
               ) : (
                 <button
                   className="btn btn-primary w-full"
                   onClick={handleDeposit}
-                  disabled={depositSubmitting || !depositParsed}
+                  disabled={depositSubmitting || !depositAmount || gameActive}
                 >
                   {depositSubmitting ? <span className="loading loading-spinner loading-sm" /> : null}
-                  Deposit
+                  {gameActive ? "Locked during game" : "Deposit"}
                 </button>
               )}
             </div>
@@ -230,19 +225,22 @@ export const InvestTab = () => {
         {/* Withdraw */}
         <div className="card bg-base-200 shadow-md">
           <div className="card-body p-5">
-            <h3 className="card-title">Withdraw</h3>
-            <p className="text-sm text-base-content/70">Redeem your shares for CLAWD.</p>
+            <h3 className="card-title text-lg">Withdraw</h3>
+            <p className="text-xs text-base-content/60">Convert your shares back into CLAWD.</p>
 
             <div className="form-control mt-2">
-              <div className="input-group">
+              <div className="label p-1">
+                <span className="label-text-alt">Shares: {userShares ? Number(formatUnits(userShares, 18)).toFixed(4) : "0"}</span>
+              </div>
+              <div className="join">
                 <input
                   type="number"
                   placeholder="Shares"
-                  className="input input-bordered w-full"
+                  className="input input-bordered join-item w-full"
                   value={withdrawShares}
                   onChange={e => setWithdrawShares(e.target.value)}
                 />
-                <button className="btn btn-ghost btn-sm absolute right-2 top-3" onClick={() => setWithdrawShares(formatUnits(userShares ?? 0n, 18))}>
+                <button className="btn btn-ghost join-item border-base-300" onClick={() => setWithdrawShares(formatUnits(userShares ?? 0n, 18))}>
                   MAX
                 </button>
               </div>
@@ -251,30 +249,18 @@ export const InvestTab = () => {
             <div className="mt-4">
               {walletGate ? (
                 walletGate
-              ) : gameActive ? (
-                <button className="btn btn-disabled w-full">Pool Locked</button>
               ) : (
                 <button
                   className="btn btn-primary w-full"
                   onClick={handleWithdraw}
-                  disabled={withdrawSubmitting || !withdrawShares}
+                  disabled={withdrawSubmitting || !withdrawShares || gameActive}
                 >
                   {withdrawSubmitting ? <span className="loading loading-spinner loading-sm" /> : null}
-                  Withdraw
+                  {gameActive ? "Locked during game" : "Withdraw"}
                 </button>
               )}
             </div>
           </div>
-        </div>
-      </div>
-
-      <div className="alert alert-info shadow-sm">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" className="stroke-current shrink-0 w-6 h-6">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-        </svg>
-        <div className="text-sm">
-          <p className="font-bold">How it works:</p>
-          <p>Investors provide the liquidity for the game jackpot. In return, they receive 100% of the entry fees from every game played, distributed proportionally to their share of the pool.</p>
         </div>
       </div>
     </div>
