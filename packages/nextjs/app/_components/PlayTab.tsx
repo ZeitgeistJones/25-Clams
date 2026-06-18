@@ -154,7 +154,7 @@ export const PlayTab = () => {
     setElimSubmitting(true);
     try {
       const ids = Array.from(selectedForElim).sort((a, b) => a - b);
-      await writeGame({ functionName: "eliminateClams", args: [ids] });
+      await writeGame({ functionName: "eliminateClams", args: [ids as number[]] });
       notification.success("Clams eliminated!");
       setSelectedForElim(new Set());
     } catch {
