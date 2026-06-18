@@ -52,3 +52,4 @@ yarn start          # frontend at localhost:3000
 - Chainlink VRF V2.5 — verifiable randomness on Base
 - BGIPFS — decentralized frontend hosting
 - CLAWD — native game token on Base
+ 
