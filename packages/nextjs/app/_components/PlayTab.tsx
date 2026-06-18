@@ -85,8 +85,8 @@ export const PlayTab = () => {
   const { data: elimEvents } = useScaffoldEventHistory({
     contractName: "ClamsGame",
     eventName: "ClamsEliminated",
-    fromBlock: 0n,
-    watch: true,
+    fromBlock: 29000000n
+    watch: false,
     blockData: false,
   });
 
